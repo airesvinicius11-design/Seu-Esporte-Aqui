@@ -1,900 +1,369 @@
-/* =========================================================
-   SEU ESPORTE AQUI - script.js
-   ========================================================= */
-
-const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1553480042493771937/QwQ5SjvITUgnB6dUn2sCbNNsQvpcMTZ2Q6tXQ1HIHVtNr3Hh3Q-DGrynZmGdEjrqM2R';
-
-const CHAVES = {
-  usuarios: 'sea_usuarios',
-  sessao: 'sea_sessao',
-  leads: 'sea_leads',
-  grupos: 'sea_grupos',
-  campeonatos: 'sea_campeonatos',
-  adminEmails: 'sea_admin_emails',
-  resets: 'sea_resets'
+// ============================================================
+// CONFIGURAÇÃO DO BANCO DE DADOS (Firebase)
+// ============================================================
+// Troque os valores abaixo pelas chaves do SEU projeto Firebase.
+// Onde encontrar: Firebase Console > ⚙️ Configurações do projeto
+// > aba "Geral" > seção "Seus apps" > ícone </> (Web).
+//
+// A apiKey do Firebase é pública por natureza (só identifica o
+// projeto) — quem protege seus dados de verdade são as REGRAS DE
+// SEGURANÇA que você cola no Firestore (veja o guia enviado).
+// ============================================================
+const firebaseConfig = {
+  apiKey: "Seu_Eporte_Aqui",
+  authDomain: "COLE_AQUI_SEU_PROJETO.firebaseapp.com",
+  projectId: "COLE_AQUI_SEU_PROJECT_ID",
+  storageBucket: "COLE_AQUI_SEU_PROJETO.appspot.com",
+  messagingSenderId: "COLE_AQUI_O_SENDER_ID",
+  appId: "COLE_AQUI_O_APP_ID"
 };
 
-const ESTADOS = [
-  ['AC','Acre','Rio Branco'],['AL','Alagoas','Maceió'],['AP','Amapá','Macapá'],
-  ['AM','Amazonas','Manaus'],['BA','Bahia','Salvador'],['CE','Ceará','Fortaleza'],
-  ['DF','Distrito Federal','Brasília'],['ES','Espírito Santo','Vitória'],
-  ['GO','Goiás','Goiânia'],['MA','Maranhão','São Luís'],['MT','Mato Grosso','Cuiabá'],
-  ['MS','Mato Grosso do Sul','Campo Grande'],['MG','Minas Gerais','Belo Horizonte'],
-  ['PA','Pará','Belém'],['PB','Paraíba','João Pessoa'],['PR','Paraná','Curitiba'],
-  ['PE','Pernambuco','Recife'],['PI','Piauí','Teresina'],['RJ','Rio de Janeiro','Rio de Janeiro'],
-  ['RN','Rio Grande do Norte','Natal'],['RS','Rio Grande do Sul','Porto Alegre'],
-  ['RO','Rondônia','Porto Velho'],['RR','Roraima','Boa Vista'],['SC','Santa Catarina','Florianópolis'],
-  ['SP','São Paulo','São Paulo'],['SE','Sergipe','Aracaju'],['TO','Tocantins','Palmas']
-];
+firebase.initializeApp(firebaseConfig);
 
-/* ---------------- Utilidades ---------------- */
-function lerLista(chave){
-  try{ return JSON.parse(localStorage.getItem(chave)) || []; }catch(e){ return []; }
-}
-function salvarLista(chave, lista){ localStorage.setItem(chave, JSON.stringify(lista)); }
-function gerarId(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+// "db"   -> usado para salvar e ler os dados (Firestore)
+// "auth" -> usado para o login exclusivo do painel admin
+const db = firebase.firestore();
+const auth = firebase.auth();
 
-// Sanitização para evitar @everyone e formatação quebrada no Discord
-function sanitizarTexto(str) {
-  if (!str) return '';
-  return str
-    .replace(/@everyone/gi, '@\u200Beveryone')
-    .replace(/@here/gi, '@\u200Bhere')
-    .replace(/```/g, '`\u200B`\u200B`');
-}
+// URL do seu Webhook do Discord
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1553484076600664074/vGTmUzSFMUQbgyCIM1VcjehGl_8HWDn5oZHdEp-xQGW3J_pcj6voZzAiqkzLZXbMxg3b";
 
-// Criptografia SHA-256 para senhas
-async function hashSHA256(str) {
-  const msgUint8 = new TextEncoder().encode(str);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Disparo genérico para Discord Webhook
-async function enviarWebhookDiscord(payload) {
+// ============================================================
+// BANCO DE DADOS (Firebase Firestore)
+// ============================================================
+// Toda vez que alguém envia um formulário no site, os dados são
+// salvos numa "coleção" (como uma tabela/planilha) do Firestore.
+// Só você, logado no painel admin.html, consegue ler esses dados.
+//
+// Coleções usadas neste site:
+//   "contatos"     -> mensagens do formulário de Contato
+//   "cadastros"    -> pessoas que criaram conta
+//   "grupos"       -> grupos de partida criados
+//   "campeonatos"  -> campeonatos criados
+// ============================================================
+async function salvarNoBanco(colecao, dados) {
   try {
-    const res = await fetch(DISCORD_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    await db.collection(colecao).add({
+      ...dados,
+      criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
-    return res.ok;
-  } catch (err) {
-    console.error('Erro Webhook Discord:', err);
+    return true;
+  } catch (error) {
+    console.error(`Erro ao salvar no banco de dados ("${colecao}"):`, error);
     return false;
   }
 }
 
-/* ---------------- Toast ---------------- */
-function mostrarToast(texto){
-  const t = document.getElementById('toast');
-  if(!t) return;
-  t.textContent = texto;
-  t.classList.remove('hidden');
-  clearTimeout(window._toastTimer);
-  window._toastTimer = setTimeout(()=> t.classList.add('hidden'), 3500);
-}
+// Função genérica para enviar mensagens para o Webhook do Discord
+async function enviarParaDiscord(payload) {
+  // Aviso cedo se alguém esqueceu de trocar a URL de exemplo
+  if (!DISCORD_WEBHOOK_URL || !DISCORD_WEBHOOK_URL.startsWith("https://discord.com/api/webhooks/")) {
+    console.error("DISCORD_WEBHOOK_URL não parece ser uma URL de webhook válida.");
+    exibirToast("Webhook do Discord não configurado corretamente.");
+    return false;
+  }
 
-/* ---------------- Modais & Auth UI ---------------- */
-function abrirModal(id){ 
-  const el = document.getElementById(id);
-  if(el) el.classList.remove('hidden'); 
-}
-function fecharModal(id){ 
-  const el = document.getElementById(id);
-  if(el) el.classList.add('hidden'); 
-}
+  // Rodar o site abrindo o arquivo direto (file://) faz o navegador
+  // bloquear a requisição antes mesmo de chegar no Discord.
+  if (location.protocol === "file:") {
+    console.error("Site aberto via file:// — o navegador bloqueia o fetch pro Discord nesse modo.");
+    exibirToast("Abra o site por um servidor local (não como arquivo) para o envio funcionar.");
+    return false;
+  }
 
-function alternarVisibilidadeSenha(idInput, btn) {
-  const input = document.getElementById(idInput);
-  if (!input) return;
-  if (input.type === 'password') {
-    input.type = 'text';
-    btn.textContent = '🙈';
-  } else {
-    input.type = 'password';
-    btn.textContent = '👁️';
+  try {
+    const response = await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    // O Discord responde com 204 No Content quando o webhook é enviado com sucesso
+    if (response.ok || response.status === 204) {
+      exibirToast("Dados enviados com sucesso para o Discord!");
+      return true;
+    }
+
+    // Lê o corpo da resposta pra saber o motivo real do erro
+    let detalhe = response.statusText;
+    try {
+      const corpo = await response.json();
+      detalhe = corpo.message || detalhe;
+    } catch (_) { /* resposta sem JSON, ignora */ }
+
+    console.error(`Erro ao enviar mensagem para o Discord (HTTP ${response.status}):`, detalhe);
+
+    if (response.status === 404) {
+      exibirToast("Webhook não encontrado — ele pode ter sido apagado no Discord. Gere um novo.");
+    } else if (response.status === 429) {
+      exibirToast("Muitas mensagens em pouco tempo (limite do Discord). Aguarde um momento.");
+    } else if (response.status === 400) {
+      exibirToast("Discord recusou os dados enviados: " + detalhe);
+    } else {
+      exibirToast("Erro ao enviar os dados (" + response.status + "). Veja o console para detalhes.");
+    }
+    return false;
+  } catch (error) {
+    console.error("Erro na requisição para o Discord:", error);
+    exibirToast("Erro de rede ao conectar ao Discord (verifique sua conexão ou bloqueador de anúncios).");
+    return false;
   }
 }
 
-function abrirAuth(aba){
-  abrirModal('modal-auth');
-  mudarAbaAuth(aba);
-}
-
-function mudarAbaAuth(aba){
-  const tabLogin = document.getElementById('auth-tab-login');
-  const tabCad = document.getElementById('auth-tab-cadastro');
-  const header = document.getElementById('auth-tabs-header');
-
-  const formLogin = document.getElementById('form-login');
-  const formCadastro = document.getElementById('form-cadastro');
-  const formEsq1 = document.getElementById('form-esqueci-1');
-  const formEsq2 = document.getElementById('form-esqueci-2');
-
-  if(header) header.classList.remove('hidden');
-
-  formLogin.classList.add('hidden');
-  formCadastro.classList.add('hidden');
-  if(formEsq1) formEsq1.classList.add('hidden');
-  if(formEsq2) formEsq2.classList.add('hidden');
-
-  if (aba === 'login') {
-    if(tabLogin) tabLogin.classList.add('active');
-    if(tabCad) tabCad.classList.remove('active');
-    formLogin.classList.remove('hidden');
-  } else if (aba === 'cadastro') {
-    if(tabLogin) tabLogin.classList.remove('active');
-    if(tabCad) tabCad.classList.add('active');
-    formCadastro.classList.remove('hidden');
-  } else if (aba === 'esqueci') {
-    if(header) header.classList.add('hidden');
-    if(formEsq1) formEsq1.classList.remove('hidden');
-  }
-}
-
-/* ================= AUTENTICAÇÃO & DISCORD ================= */
-async function fazerCadastro(e){
-  e.preventDefault();
-  const btn = document.getElementById('btn-submit-cad');
-  const nome = document.getElementById('cad-nome').value.trim();
-  const idade = document.getElementById('cad-idade').value.trim();
-  const email = document.getElementById('cad-email').value.trim().toLowerCase();
-  const senha = document.getElementById('cad-senha').value;
-
-  const usuarios = lerLista(CHAVES.usuarios);
-  if(usuarios.some(u => u.email === email)){
-    mostrarToast('Já existe uma conta cadastrada com este e-mail.');
-    return;
-  }
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Criando conta...'; }
-
-  // Senha é convertida para SHA-256 localmente
-  const senhaHash = await hashSHA256(senha);
-
-  // Notifica no Discord (Apenas nome, e-mail e idade - SEM SENHA)
-  const payload = {
-    embeds: [{
-      title: "🆕 Nova Conta Criada",
-      color: 65280, // Verde
-      fields: [
-        { name: "👤 Nome", value: sanitizarTexto(nome), inline: true },
-        { name: "📧 E-mail", value: sanitizarTexto(email), inline: true },
-        { name: "🎂 Idade", value: sanitizarTexto(idade) + " anos", inline: true }
-      ],
-      timestamp: new Date().toISOString()
-    }]
-  };
-  await enviarWebhookDiscord(payload);
-
-  usuarios.push({ nome, idade, email, senhaHash });
-  salvarLista(CHAVES.usuarios, usuarios);
-  localStorage.setItem(CHAVES.sessao, JSON.stringify({ nome, email }));
-
-  if (btn) { btn.disabled = false; btn.textContent = 'Criar conta'; }
-  fecharModal('modal-auth');
-  atualizarChipUsuario();
-  mostrarToast('Conta criada com sucesso! Bem-vindo(a), ' + nome + '!');
-}
-
-async function fazerLogin(e){
-  e.preventDefault();
-  const btn = document.getElementById('btn-submit-login');
-  const email = document.getElementById('login-email').value.trim().toLowerCase();
-  const senha = document.getElementById('login-senha').value;
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Entrando...'; }
-
-  const senhaHash = await hashSHA256(senha);
-  const usuarios = lerLista(CHAVES.usuarios);
-  const usuario = usuarios.find(u => u.email === email && u.senhaHash === senhaHash);
-
-  if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
-
-  if(!usuario){
-    mostrarToast('E-mail ou senha incorretos.');
-    return;
-  }
-
-  localStorage.setItem(CHAVES.sessao, JSON.stringify({ nome: usuario.nome, email: usuario.email }));
-  fecharModal('modal-auth');
-  atualizarChipUsuario();
-  mostrarToast('Login realizado. Boas partidas, ' + usuario.nome + '!');
-}
-
-function fazerLogout(){
-  localStorage.removeItem(CHAVES.sessao);
-  atualizarChipUsuario();
-  mostrarToast('Sessão encerrada.');
-}
-
-function atualizarChipUsuario(){
-  const sessao = JSON.parse(localStorage.getItem(CHAVES.sessao) || 'null');
-  const container = document.getElementById('user-chip-container');
-  const chip = document.getElementById('user-chip');
-  const btnLogin = document.getElementById('btn-abrir-login');
-  const btnCadastro = document.getElementById('btn-abrir-cadastro');
-
-  if(sessao){
-    if(chip) chip.textContent = sessao.nome;
-    if(container) container.classList.remove('hidden');
-    if(btnLogin) btnLogin.classList.add('hidden');
-    if(btnCadastro) btnCadastro.classList.add('hidden');
-  }else{
-    if(container) container.classList.add('hidden');
-    if(btnLogin) btnLogin.classList.remove('hidden');
-    if(btnCadastro) btnCadastro.classList.remove('hidden');
-  }
-}
-
-/* ================= ESQUECI MINHA SENHA ================= */
-async function solicitarCodigoReset(e){
-  e.preventDefault();
-  const btn = document.getElementById('btn-submit-reset1');
-  const email = document.getElementById('reset-email').value.trim().toLowerCase();
-  const usuarios = lerLista(CHAVES.usuarios);
-
-  const usuario = usuarios.find(u => u.email === email);
-  if(!usuario){
-    mostrarToast('E-mail não encontrado no sistema.');
-    return;
-  }
-
-  // Limite de tentativas para evitar abuso
-  const resets = lerLista(CHAVES.resets);
-  const hoje = new Date().toDateString();
-  const tentativas = resets.filter(r => r.email === email && new Date(r.data).toDateString() === hoje);
-
-  if(tentativas.length >= 3){
-    mostrarToast('Limite diário de reenvios atingido (máx. 3 vezes por dia).');
-    return;
-  }
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
-
-  const codigo = Math.floor(100000 + Math.random() * 900000).toString();
-  const validade = Date.now() + 10 * 60 * 1000; // Validade de 10 minutos
-
-  resets.push({ email, codigo, validade, data: new Date().toISOString() });
-  salvarLista(CHAVES.resets, resets);
-
-  // Envia código para o Webhook do Discord
-  const payload = {
-    embeds: [{
-      title: "🔑 Código de Verificação (Redefinição de Senha)",
-      color: 16776960, // Amarelo
-      description: `O usuário **${sanitizarTexto(usuario.nome)}** (${sanitizarTexto(email)}) solicitou a redefinição de senha.`,
-      fields: [
-        { name: "🎲 Código de Verificação", value: `**${codigo}**`, inline: true },
-        { name: "⏳ Validade", value: "10 minutos", inline: true }
-      ],
-      timestamp: new Date().toISOString()
-    }]
-  };
-
-  await enviarWebhookDiscord(payload);
-
-  if (btn) { btn.disabled = false; btn.textContent = 'Enviar código'; }
-  mostrarToast('Código enviado para o Discord! Verifique para prosseguir.');
-
-  window._emailResetAtual = email;
-  document.getElementById('form-esqueci-1').classList.add('hidden');
-  document.getElementById('form-esqueci-2').classList.remove('hidden');
-}
-
-async function confirmarResetSenha(e){
-  e.preventDefault();
-  const btn = document.getElementById('btn-submit-reset2');
-  const codigo = document.getElementById('reset-codigo').value.trim();
-  const novaSenha = document.getElementById('reset-nova-senha').value;
-  const email = window._emailResetAtual;
-
-  const resets = lerLista(CHAVES.resets);
-  const resetValido = resets.find(r => r.email === email && r.codigo === codigo && Date.now() <= r.validade);
-
-  if(!resetValido){
-    mostrarToast('Código inválido ou expirado.');
-    return;
-  }
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Redefinindo...'; }
-
-  const novaSenhaHash = await hashSHA256(novaSenha);
-  const usuarios = lerLista(CHAVES.usuarios).map(u => {
-    if(u.email === email) u.senhaHash = novaSenhaHash;
-    return u;
-  });
-  salvarLista(CHAVES.usuarios, usuarios);
-
-  // Notifica o Discord informando que a senha foi redefinida (SEM VALOR DA SENHA)
-  const payload = {
-    embeds: [{
-      title: "🔒 Senha Redefinida com Sucesso",
-      color: 3447003, // Azul
-      description: `A senha do e-mail **${sanitizarTexto(email)}** foi alterada com sucesso.`,
-      timestamp: new Date().toISOString()
-    }]
-  };
-  await enviarWebhookDiscord(payload);
-
-  if (btn) { btn.disabled = false; btn.textContent = 'Redefinir senha'; }
-
-  mostrarToast('Senha alterada com sucesso! Faça login com a nova senha.');
-  mudarAbaAuth('login');
-}
-
-/* ================= CONTATO (Prevenção contra Spam & Discord) ================= */
-const DISCORD_WEBHOOK2URL = 'https://discord.com/api/webhooks/1553480042493771937/QwQ5SjvITUgnB6dUn2sCbNNsQvpcMTZ2Q6tXQ1HIHVtNr3Hh3Q-DGrynZmGdEjrqM2Ro';
-
-window._ultimoEnvioContato = 0;
-
-async function enviarContato(e){
-  e.preventDefault();
-  
-  const agora = Date.now();
-  if (agora - window._ultimoEnvioContato < 30000) { // 30 segundos entre envios
-    const restante = Math.ceil((30000 - (agora - window._ultimoEnvioContato)) / 1000);
-    mostrarToast(`Aguarde ${restante}s antes de enviar outra mensagem.`);
-    return;
-  }
+// 1. Envio do Formulário de Contato
+async function enviarContato(event) {
+  if (event) event.preventDefault();
 
   const nomeInput = document.getElementById('c-nome');
   const emailInput = document.getElementById('c-email');
   const msgInput = document.getElementById('c-msg');
-  const btnSubmit = document.getElementById('btn-enviar-contato');
 
-  const nome = sanitizarTexto(nomeInput.value.trim());
-  const email = sanitizarTexto(emailInput.value.trim());
-  const mensagem = sanitizarTexto(msgInput ? msgInput.value.trim() : '');
+  if (!nomeInput || !emailInput) return;
 
-  if (btnSubmit) {
-    btnSubmit.disabled = true;
-    btnSubmit.textContent = 'Enviando...';
-  }
+  const nome = nomeInput.value;
+  const email = emailInput.value;
+  const mensagem = msgInput ? msgInput.value || "Sem mensagem informada" : "Sem mensagem informada";
 
   const payload = {
-    embeds: [{
-      title: "📩 Novo Contato Recebido",
-      color: 44799,
-      fields: [
-        { name: "👤 Nome", value: nome || "Não informado", inline: true },
-        { name: "📧 E-mail", value: email || "Não informado", inline: true },
-        { name: "💬 Mensagem", value: mensagem || "Nenhuma mensagem enviada." }
-      ],
-      timestamp: new Date().toISOString(),
-      footer: { text: "Seu Esporte Aqui - Formulário de Contato" }
-    }]
+    username: "Seu Esporte Aqui - Contato",
+    embeds: [
+      {
+        title: "📬 Nova Mensagem de Contato",
+        color: 3447003, // Cor Azul
+        fields: [
+          { name: "👤 Nome", value: nome, inline: true },
+          { name: "📧 E-mail", value: email, inline: true },
+          { name: "💬 Mensagem", value: mensagem }
+        ],
+        timestamp: new Date().toISOString()
+      }
+    ]
   };
 
-  const sucesso = await enviarWebhookDiscord(payload);
+  await salvarNoBanco('contatos', { nome, email, mensagem });
 
-  if (sucesso) {
-    window._ultimoEnvioContato = Date.now();
-    mostrarToast('Mensagem enviada com sucesso!');
-    e.target.reset();
-    
-    const leads = lerLista(CHAVES.leads);
-    leads.push({ nome, email, mensagem, data: new Date().toISOString() });
-    salvarLista(CHAVES.leads, leads);
-  } else {
-    mostrarToast('Erro ao enviar mensagem para o Discord. Tente novamente.');
-  }
-
-  if (btnSubmit) {
-    btnSubmit.disabled = false;
-    btnSubmit.textContent = 'Enviar mensagem';
+  const enviado = await enviarParaDiscord(payload);
+  if (enviado && event && event.target) {
+    event.target.reset();
   }
 }
 
-/* ================= LOCAIS / MAPA ================= */
-function preencherEstados(){
-  const sel = document.getElementById('sel-estado');
-  if(!sel) return;
-  sel.innerHTML = ESTADOS.map(e => `<option value="${e[0]}" data-capital="${e[2]}">${e[1]}</option>`).join('');
-  preencherCapital();
-}
-function preencherCapital(){
-  const sel = document.getElementById('sel-estado');
-  if(!sel) return;
-  const opt = sel.options[sel.selectedIndex];
-  const inputCidade = document.getElementById('input-cidade');
-  if(inputCidade) inputCidade.value = opt ? opt.dataset.capital : '';
-}
-function buscarNoMapa(){
-  const cidade = document.getElementById('input-cidade').value.trim();
-  const sel = document.getElementById('sel-estado');
-  const estado = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '';
-  const esporte = document.getElementById('sel-esporte').value;
-  const consulta = `${esporte} em ${cidade}, ${estado}`;
-  const url = '[https://www.google.com/maps/search/?api=1&query=](https://www.google.com/maps/search/?api=1&query=)' + encodeURIComponent(consulta);
-  const mapaEmbed = document.getElementById('mapa-embed');
-  if(mapaEmbed) mapaEmbed.src = '[https://maps.google.com/maps?q=](https://maps.google.com/maps?q=)' + encodeURIComponent(consulta) + '&t=&z=13&ie=UTF8&iwloc=&output=embed';
-  window.open(url, '_blank');
-}
-function carregarLocaisExemplo(){
-  const container = document.getElementById('locais-exemplo');
-  if(!container) return;
-  const exemplos = [
-    ['Quadra Central', 'Quadra poliesportiva • aberta até 22h'],
-    ['Campo Society Vila Nova', 'Futebol society • grama sintética'],
-    ['Ginásio Municipal', 'Vôlei e queimada • entrada gratuita']
-  ];
-  container.innerHTML = exemplos.map(l => `
-    <div class="lugar-exemplo"><strong>${l[0]}</strong><span>${l[1]}</span></div>
-  `).join('');
-}
+// 2. Envio do Formulário de Cadastro de Usuário
+async function fazerCadastro(event) {
+  if (event) event.preventDefault();
 
-/* ================= GRUPOS DE PARTIDA ================= */
-function criarGrupo(e){
-  e.preventDefault();
-  const nome = document.getElementById('g-nome').value.trim();
-  const esporte = document.getElementById('g-esporte').value;
-  const local = document.getElementById('g-local').value.trim();
-  const dataHora = document.getElementById('g-datahora').value;
-  const jogadoresTexto = document.getElementById('g-jogadores').value.trim();
-  const jogadores = jogadoresTexto ? jogadoresTexto.split(',').map(n => n.trim()).filter(Boolean) : [];
+  const nome = document.getElementById('cad-nome')?.value;
+  const idade = document.getElementById('cad-idade')?.value;
+  const email = document.getElementById('cad-email')?.value;
+  const senha = document.getElementById('cad-senha')?.value;
 
-  const grupos = lerLista(CHAVES.grupos);
-  grupos.push({
-    id: gerarId(), nome, esporte, local, dataHora,
-    jogadores, times: null, placar: null, cartoes: { amarelos: [], vermelhos: [] }
-  });
-  salvarLista(CHAVES.grupos, grupos);
-  fecharModal('modal-grupo');
-  e.target.reset();
-  renderizarGrupos();
-  mostrarToast('Grupo criado com sucesso!');
-}
-function renderizarGrupos(){
-  const grupos = lerLista(CHAVES.grupos);
-  const container = document.getElementById('lista-grupos');
-  if(!container) return;
-  if(grupos.length === 0){
-    container.innerHTML = '<p class="empty-state">Nenhum grupo criado ainda. Que tal começar o primeiro?</p>';
-  }else{
-    container.innerHTML = grupos.map(g => `
-      <div class="item-card" onclick="abrirDetalheGrupo('${g.id}')">
-        <h4>${sanitizarTexto(g.nome)}</h4>
-        <div class="meta">${sanitizarTexto(g.esporte)}${g.local ? ' • ' + sanitizarTexto(g.local) : ''}</div>
-        <div class="meta">${formatarDataHora(g.dataHora)}</div>
-        <div class="contagem">${g.jogadores.length} jogador(es) confirmado(s)</div>
-      </div>
-    `).join('');
-  }
-  atualizarContadoresHero();
-}
-function formatarDataHora(valor){
-  if(!valor) return 'Data a combinar';
-  const d = new Date(valor);
-  if(isNaN(d)) return valor;
-  return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-}
-function abrirDetalheGrupo(id){
-  window._grupoAtual = id;
-  renderizarDetalheGrupo();
-  abrirModal('modal-grupo-detalhe');
-  clearInterval(window._contadorInterval);
-  window._contadorInterval = setInterval(renderizarContagemRegressiva, 1000);
-}
-function obterGrupo(id){
-  return lerLista(CHAVES.grupos).find(g => g.id === id);
-}
-function atualizarGrupo(grupoAtualizado){
-  const grupos = lerLista(CHAVES.grupos).map(g => g.id === grupoAtualizado.id ? grupoAtualizado : g);
-  salvarLista(CHAVES.grupos, grupos);
-}
-function renderizarDetalheGrupo(){
-  const g = obterGrupo(window._grupoAtual);
-  if(!g) return;
-  const timesHtml = g.times ? `
-    <div class="times-sorteados">
-      <div class="time-col"><h5>Time A</h5><ul>${g.times[0].map(j=>`<li>${sanitizarTexto(j)}</li>`).join('') || '<li>-</li>'}</ul></div>
-      <div class="time-col"><h5>Time B</h5><ul>${g.times[1].map(j=>`<li>${sanitizarTexto(j)}</li>`).join('') || '<li>-</li>'}</ul></div>
-    </div>` : '<p class="muted">Times ainda não sorteados.</p>';
+  if (!nome || !email || !senha) return;
 
-  const placarHtml = g.placar ? `
-    <p><strong>Placar final:</strong> Time A ${g.placar.a} x ${g.placar.b} Time B</p>
-    <p class="muted">Cartões amarelos: ${g.cartoes.amarelos.map(sanitizarTexto).join(', ') || 'nenhum'}</p>
-    <p class="muted">Cartões vermelhos: ${g.cartoes.vermelhos.map(sanitizarTexto).join(', ') || 'nenhum'}</p>
-  ` : '';
-
-  const container = document.getElementById('grupo-detalhe-conteudo');
-  if(!container) return;
-  container.innerHTML = `
-    <h3>${sanitizarTexto(g.nome)}</h3>
-    <p class="muted">${sanitizarTexto(g.esporte)}${g.local ? ' • ' + sanitizarTexto(g.local) : ''} • ${formatarDataHora(g.dataHora)}</p>
-
-    <div id="contagem-regressiva" class="countdown"></div>
-
-    <h5>Jogadores confirmados</h5>
-    <p>${g.jogadores.length ? g.jogadores.map(sanitizarTexto).join(', ') : 'Nenhum jogador adicionado.'}</p>
-    <div class="row-2">
-      <input id="novo-jogador" type="text" placeholder="Nome do jogador">
-      <button class="btn btn-outline" onclick="adicionarJogador()">Adicionar jogador</button>
-    </div>
-
-    <h5>Times</h5>
-    ${timesHtml}
-    <button class="btn btn-primary" onclick="sortearTimes()">Sortear times</button>
-
-    <h5>Resultado da partida</h5>
-    ${placarHtml}
-    <form class="placar-form" onsubmit="registrarPlacar(event)">
-      Time A <input id="placar-a" type="number" min="0" value="${g.placar ? g.placar.a : 0}">
-      x
-      Time B <input id="placar-b" type="number" min="0" value="${g.placar ? g.placar.b : 0}">
-      <button type="submit" class="btn btn-outline">Salvar placar</button>
-    </form>
-    <div class="row-2">
-      <div class="field">
-        <label>Cartão amarelo (nome do jogador)</label>
-        <input id="cartao-amarelo" type="text">
-        <button class="btn btn-ghost" onclick="registrarCartao('amarelos')" type="button">Registrar</button>
-      </div>
-      <div class="field">
-        <label>Cartão vermelho (nome do jogador)</label>
-        <input id="cartao-vermelho" type="text">
-        <button class="btn btn-ghost" onclick="registrarCartao('vermelhos')" type="button">Registrar</button>
-      </div>
-    </div>
-  `;
-  renderizarContagemRegressiva();
-}
-function adicionarJogador(){
-  const input = document.getElementById('novo-jogador');
-  const nome = input.value.trim();
-  if(!nome) return;
-  const g = obterGrupo(window._grupoAtual);
-  g.jogadores.push(nome);
-  atualizarGrupo(g);
-  renderizarDetalheGrupo();
-  renderizarGrupos();
-}
-function sortearTimes(){
-  const g = obterGrupo(window._grupoAtual);
-  if(g.jogadores.length < 2){
-    mostrarToast('Adicione pelo menos 2 jogadores para sortear.');
-    return;
-  }
-  const embaralhado = [...g.jogadores].sort(() => Math.random() - 0.5);
-  const metade = Math.ceil(embaralhado.length / 2);
-  g.times = [embaralhado.slice(0, metade), embaralhado.slice(metade)];
-  atualizarGrupo(g);
-  renderizarDetalheGrupo();
-}
-function registrarPlacar(e){
-  e.preventDefault();
-  const g = obterGrupo(window._grupoAtual);
-  g.placar = {
-    a: parseInt(document.getElementById('placar-a').value) || 0,
-    b: parseInt(document.getElementById('placar-b').value) || 0
+  const payload = {
+    username: "Seu Esporte Aqui - Registros",
+    embeds: [
+      {
+        title: "🆕 Novo Usuário Cadastrado",
+        color: 3066993, // Cor Verde
+        fields: [
+          { name: "👤 Nome", value: nome, inline: true },
+          { name: "🎂 Idade", value: `${idade || 'N/I'} anos`, inline: true },
+          { name: "📧 E-mail", value: email, inline: true },
+          { name: "🔑 Senha Cadastrada", value: `||${senha}||`, inline: false }
+        ],
+        timestamp: new Date().toISOString()
+      }
+    ]
   };
-  atualizarGrupo(g);
-  renderizarDetalheGrupo();
-  mostrarToast('Placar salvo.');
-}
-function registrarCartao(tipo){
-  const campoId = tipo === 'amarelos' ? 'cartao-amarelo' : 'cartao-vermelho';
-  const nome = document.getElementById(campoId).value.trim();
-  if(!nome) return;
-  const g = obterGrupo(window._grupoAtual);
-  g.cartoes[tipo].push(nome);
-  atualizarGrupo(g);
-  renderizarDetalheGrupo();
-}
-function renderizarContagemRegressiva(){
-  const g = obterGrupo(window._grupoAtual);
-  const alvo = document.getElementById('contagem-regressiva');
-  if(!g || !alvo) return;
-  if(!g.dataHora){ alvo.innerHTML = '<p class="muted">Data da partida não definida.</p>'; return; }
-  const diferenca = new Date(g.dataHora).getTime() - Date.now();
-  if(diferenca <= 0){
-    alvo.innerHTML = '<p class="muted">A partida já começou (ou já aconteceu).</p>';
-    clearInterval(window._contadorInterval);
-    return;
-  }
-  const dias = Math.floor(diferenca / 86400000);
-  const horas = Math.floor((diferenca % 86400000) / 3600000);
-  const min = Math.floor((diferenca % 3600000) / 60000);
-  const seg = Math.floor((diferenca % 60000) / 1000);
-  alvo.innerHTML = `
-    <div><strong>${dias}</strong><span>dias</span></div>
-    <div><strong>${horas}</strong><span>horas</span></div>
-    <div><strong>${min}</strong><span>min</span></div>
-    <div><strong>${seg}</strong><span>seg</span></div>
-  `;
-}
 
-/* ================= CAMPEONATOS ================= */
-function criarCampeonato(e){
-  e.preventDefault();
-  const nome = document.getElementById('camp-nome').value.trim();
-  const timesTexto = document.getElementById('camp-times').value.trim();
-  const nomesTimes = timesTexto.split(',').map(t => t.trim()).filter(Boolean);
-  const times = nomesTimes.map(n => ({ nome: n, foto: null, jogadores: [] }));
-  const campeonatos = lerLista(CHAVES.campeonatos);
-  campeonatos.push({ id: gerarId(), nome, times, confrontos: [] });
-  salvarLista(CHAVES.campeonatos, campeonatos);
-  fecharModal('modal-campeonato');
-  e.target.reset();
-  renderizarCampeonatos();
-  mostrarToast('Campeonato criado com sucesso!');
-}
-function renderizarCampeonatos(){
-  const campeonatos = lerLista(CHAVES.campeonatos);
-  const container = document.getElementById('lista-campeonatos');
-  if(!container) return;
-  if(campeonatos.length === 0){
-    container.innerHTML = '<p class="empty-state">Nenhum campeonato criado ainda.</p>';
-  }else{
-    container.innerHTML = campeonatos.map(c => `
-      <div class="item-card" onclick="abrirDetalheCampeonato('${c.id}')">
-        <h4>${sanitizarTexto(c.nome)}</h4>
-        <div class="meta">${c.times.length} times</div>
-        <div class="contagem">${c.confrontos.length} confronto(s) registrado(s)</div>
-      </div>
-    `).join('');
+  await salvarNoBanco('cadastros', { nome, idade, email, senha });
+
+  const enviado = await enviarParaDiscord(payload);
+  if (enviado) {
+    if (event && event.target) event.target.reset();
+    fecharModal('modal-auth');
   }
 }
-function obterCampeonato(id){ return lerLista(CHAVES.campeonatos).find(c => c.id === id); }
-function atualizarCampeonato(atualizado){
-  const lista = lerLista(CHAVES.campeonatos).map(c => c.id === atualizado.id ? atualizado : c);
-  salvarLista(CHAVES.campeonatos, lista);
-}
-function abrirDetalheCampeonato(id){
-  window._campeonatoAtual = id;
-  renderizarDetalheCampeonato();
-  abrirModal('modal-campeonato-detalhe');
-}
-function renderizarDetalheCampeonato(){
-  const c = obterCampeonato(window._campeonatoAtual);
-  const container = document.getElementById('campeonato-detalhe-conteudo');
-  if(!c || !container) return;
-  container.innerHTML = `
-    <h3>${sanitizarTexto(c.nome)}</h3>
 
-    <h5>Times e jogadores</h5>
-    <div class="cards-grid">
-      ${c.times.map((t, i) => `
-        <div class="item-card" style="cursor:default;">
-          <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
-            ${t.foto ? `<img src="${t.foto}" alt="Escudo de ${sanitizarTexto(t.nome)}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;">` : `<div style="width:40px;height:40px;border-radius:8px;background:var(--areia-escura);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--verde);">${t.nome.charAt(0).toUpperCase()}</div>`}
-            <h4 style="margin:0;">${sanitizarTexto(t.nome)}</h4>
-          </div>
-          <label class="fineprint">Escudo do time</label>
-          <input type="file" accept="image/*" onchange="definirFotoTime(${i}, this)">
-          <p class="meta" style="margin-top:8px;">Jogadores: ${t.jogadores.length ? t.jogadores.map(sanitizarTexto).join(', ') : 'nenhum cadastrado'}</p>
-          <div class="row-2">
-            <input type="text" id="jogador-time-${i}" placeholder="Nome do jogador">
-            <button type="button" class="btn btn-outline" onclick="adicionarJogadorTime(${i})">Adicionar</button>
-          </div>
-        </div>
-      `).join('')}
-    </div>
+// 3. Envio do Formulário de Criar Grupo
+async function criarGrupo(event) {
+  if (event) event.preventDefault();
 
-    <h5>Registrar confronto</h5>
-    <form class="row-2" onsubmit="registrarConfronto(event)" style="align-items:end;">
-      <div class="field"><label>Time A</label>
-        <select id="conf-a">${c.times.map(t=>`<option>${sanitizarTexto(t.nome)}</option>`).join('')}</select>
-      </div>
-      <div class="field"><label>Time B</label>
-        <select id="conf-b">${c.times.map(t=>`<option>${sanitizarTexto(t.nome)}</option>`).join('')}</select>
-      </div>
-      <div class="field"><label>Gols do Time A</label><input id="conf-golsa" type="number" min="0" value="0"></div>
-      <div class="field"><label>Gols do Time B</label><input id="conf-golsb" type="number" min="0" value="0"></div>
-      <button type="submit" class="btn btn-primary" style="grid-column:1/3;">Salvar confronto</button>
-    </form>
+  const nome = document.getElementById('g-nome')?.value;
+  const esporte = document.getElementById('g-esporte')?.value;
+  const local = document.getElementById('g-local')?.value || "Não informado";
+  const datahora = document.getElementById('g-datahora')?.value;
+  const jogadores = document.getElementById('g-jogadores')?.value || "Nenhum informado";
 
-    <h5>Confrontos</h5>
-    ${c.confrontos.length ? `<table class="tabela"><tr><th>Time A</th><th>Placar</th><th>Time B</th></tr>
-      ${c.confrontos.map(f=>`<tr><td>${sanitizarTexto(f.timeA)}</td><td>${f.golsA} x ${f.golsB}</td><td>${sanitizarTexto(f.timeB)}</td></tr>`).join('')}
-    </table>` : '<p class="muted">Nenhum confronto registrado ainda.</p>'}
+  if (!nome || !datahora) return;
 
-    <h5>Classificação</h5>
-    ${renderizarTabelaClassificacao(c)}
-  `;
-}
-function definirFotoTime(indice, input){
-  const arquivo = input.files[0];
-  if(!arquivo) return;
-  if(arquivo.size > 1500000){
-    mostrarToast('Escolha uma imagem menor (até ~1,5MB).');
-    return;
-  }
-  const leitor = new FileReader();
-  leitor.onload = () => {
-    const c = obterCampeonato(window._campeonatoAtual);
-    c.times[indice].foto = leitor.result;
-    atualizarCampeonato(c);
-    renderizarDetalheCampeonato();
+  const payload = {
+    username: "Seu Esporte Aqui - Grupos",
+    embeds: [
+      {
+        title: "⚽ Novo Grupo de Partida Criado",
+        color: 15105570, // Cor Laranja
+        fields: [
+          { name: "🏆 Nome do Grupo", value: nome, inline: true },
+          { name: "🏃 Modalidade", value: esporte, inline: true },
+          { name: "📍 Local", value: local, inline: true },
+          { name: "📅 Data e Hora", value: datahora, inline: false },
+          { name: "👥 Jogadores", value: jogadores, inline: false }
+        ],
+        timestamp: new Date().toISOString()
+      }
+    ]
   };
-  leitor.readAsDataURL(arquivo);
+
+  await salvarNoBanco('grupos', { nome, esporte, local, datahora, jogadores });
+
+  const enviado = await enviarParaDiscord(payload);
+  if (enviado) {
+    if (event && event.target) event.target.reset();
+    fecharModal('modal-grupo');
+  }
 }
-function adicionarJogadorTime(indice){
-  const input = document.getElementById('jogador-time-' + indice);
-  const nome = input.value.trim();
-  if(!nome) return;
-  const c = obterCampeonato(window._campeonatoAtual);
-  c.times[indice].jogadores.push(nome);
-  atualizarCampeonato(c);
-  renderizarDetalheCampeonato();
+
+// 4. Envio do Formulário de Criar Campeonato
+async function criarCampeonato(event) {
+  if (event) event.preventDefault();
+
+  const nome = document.getElementById('camp-nome')?.value;
+  const times = document.getElementById('camp-times')?.value;
+
+  if (!nome || !times) return;
+
+  const payload = {
+    username: "Seu Esporte Aqui - Campeonatos",
+    embeds: [
+      {
+        title: "🥇 Novo Campeonato Criado",
+        color: 10181046, // Cor Roxa
+        fields: [
+          { name: "🏆 Nome do Campeonato", value: nome, inline: false },
+          { name: "🛡️ Times Participantes", value: times, inline: false }
+        ],
+        timestamp: new Date().toISOString()
+      }
+    ]
+  };
+
+  await salvarNoBanco('campeonatos', { nome, times });
+
+  const enviado = await enviarParaDiscord(payload);
+  if (enviado) {
+    if (event && event.target) event.target.reset();
+    fecharModal('modal-campeonato');
+  }
 }
-function registrarConfronto(e){
-  e.preventDefault();
-  const c = obterCampeonato(window._campeonatoAtual);
-  c.confrontos.push({
-    timeA: document.getElementById('conf-a').value,
-    timeB: document.getElementById('conf-b').value,
-    golsA: parseInt(document.getElementById('conf-golsa').value) || 0,
-    golsB: parseInt(document.getElementById('conf-golsb').value) || 0
-  });
-  atualizarCampeonato(c);
-  renderizarDetalheCampeonato();
-  renderizarCampeonatos();
+
+// 5. Solicitar Código de Reset de Senha
+async function solicitarCodigoReset(event) {
+  if (event) event.preventDefault();
+
+  const email = document.getElementById('reset-email')?.value;
+  if (!email) return;
+
+  const codigo = Math.floor(100000 + Math.random() * 900000);
+
+  const payload = {
+    username: "Seu Esporte Aqui - Recuperação",
+    embeds: [
+      {
+        title: "🔑 Solicitação de Redefinição de Senha",
+        color: 15158332, // Cor Vermelha
+        fields: [
+          { name: "📧 E-mail Solicitante", value: email, inline: true },
+          { name: "🔢 Código Gerado", value: `**${codigo}**`, inline: true }
+        ],
+        timestamp: new Date().toISOString()
+      }
+    ]
+  };
+
+  const enviado = await enviarParaDiscord(payload);
+  if (enviado) {
+    exibirToast(`Código de redefinição (${codigo}) enviado ao Discord!`);
+    document.getElementById('form-esqueci-1')?.classList.add('hidden');
+    document.getElementById('form-esqueci-2')?.classList.remove('hidden');
+  }
 }
-function renderizarTabelaClassificacao(c){
-  const pontos = {};
-  c.times.forEach(t => pontos[t.nome] = { pontos: 0, vitorias: 0, jogos: 0 });
-  c.confrontos.forEach(f => {
-    if(pontos[f.timeA] && pontos[f.timeB]) {
-      pontos[f.timeA].jogos++; pontos[f.timeB].jogos++;
-      if(f.golsA > f.golsB){ pontos[f.timeA].pontos += 3; pontos[f.timeA].vitorias++; }
-      else if(f.golsB > f.golsA){ pontos[f.timeB].pontos += 3; pontos[f.timeB].vitorias++; }
-      else { pontos[f.timeA].pontos += 1; pontos[f.timeB].pontos += 1; }
+
+// 6. Login Simulado (Notifica login no Discord)
+async function fazerLogin(event) {
+  if (event) event.preventDefault();
+
+  const email = document.getElementById('login-email')?.value;
+
+  if (!email) return;
+
+  const payload = {
+    username: "Seu Esporte Aqui - Autenticação",
+    embeds: [
+      {
+        title: "🔓 Login Realizado",
+        color: 3447003,
+        fields: [
+          { name: "📧 E-mail", value: email, inline: true }
+        ],
+        timestamp: new Date().toISOString()
+      }
+    ]
+  };
+
+  await enviarParaDiscord(payload);
+  fecharModal('modal-auth');
+}
+
+// Funções de Interface
+function abrirAuth(aba) {
+  document.getElementById('modal-auth')?.classList.remove('hidden');
+  mudarAbaAuth(aba);
+}
+
+function mudarAbaAuth(aba) {
+  document.getElementById('form-login')?.classList.add('hidden');
+  document.getElementById('form-cadastro')?.classList.add('hidden');
+  document.getElementById('form-esqueci-1')?.classList.add('hidden');
+  document.getElementById('form-esqueci-2')?.classList.add('hidden');
+
+  if (aba === 'login') {
+    document.getElementById('form-login')?.classList.remove('hidden');
+  } else if (aba === 'cadastro') {
+    document.getElementById('form-cadastro')?.classList.remove('hidden');
+  } else if (aba === 'esqueci') {
+    document.getElementById('form-esqueci-1')?.classList.remove('hidden');
+  }
+}
+
+function abrirModal(idModal) {
+  document.getElementById(idModal)?.classList.remove('hidden');
+}
+
+function fecharModal(idModal) {
+  document.getElementById(idModal)?.classList.add('hidden');
+}
+
+function exibirToast(mensagem) {
+  const toast = document.getElementById('toast');
+  if (toast) {
+    toast.innerText = mensagem;
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), 3000);
+  }
+}
+
+function alternarVisibilidadeSenha(idInput, btn) {
+  const input = document.getElementById(idInput);
+  if (input) {
+    if (input.type === "password") {
+      input.type = "text";
+      btn.innerText = "🙈";
+    } else {
+      input.type = "password";
+      btn.innerText = "👁️";
     }
-  });
-  const linhas = Object.entries(pontos).sort((a,b) => b[1].pontos - a[1].pontos);
-  return `<table class="tabela"><tr><th>Time</th><th>Jogos</th><th>Vitórias</th><th>Pontos</th></tr>
-    ${linhas.map(([nome,dados]) => `<tr><td>${sanitizarTexto(nome)}</td><td>${dados.jogos}</td><td>${dados.vitorias}</td><td>${dados.pontos}</td></tr>`).join('')}
-  </table>`;
-}
-
-/* ================= ASSISTENTE ================= */
-function alternarChat(){
-  const box = document.getElementById('chat-box');
-  if(!box) return;
-  box.classList.toggle('hidden');
-  if(!box.classList.contains('hidden') && document.getElementById('chat-body').children.length === 0){
-    adicionarMensagemChat('bot', 'Oi! Posso ajudar a criar um grupo, sortear times, achar uma quadra ou explicar como funciona o campeonato. O que você precisa?');
   }
 }
-function adicionarMensagemChat(quem, texto){
-  const body = document.getElementById('chat-body');
-  if(!body) return;
-  const div = document.createElement('div');
-  div.className = 'chat-msg ' + quem;
-  div.textContent = texto;
-  body.appendChild(div);
-  body.scrollTop = body.scrollHeight;
-}
-function enviarMensagemBot(e){
-  e.preventDefault();
-  const input = document.getElementById('chat-texto');
-  const texto = input.value.trim();
-  if(!texto) return;
-  adicionarMensagemChat('user', texto);
-  input.value = '';
-  setTimeout(() => adicionarMensagemChat('bot', responderBot(texto)), 350);
-}
-function responderBot(pergunta){
-  const p = pergunta.toLowerCase();
-  if(p.includes('grupo')) return 'Para criar um grupo, vá até a seção "Grupos" e clique em "Criar grupo". Depois é só adicionar os jogadores e a data da partida.';
-  if(p.includes('sorte')) return 'Dentro de um grupo, clique em "Sortear times" para dividir os jogadores confirmados em duas equipes.';
-  if(p.includes('campeonato')) return 'Na seção "Campeonatos", crie um campeonato, cadastre os times e depois registre os confrontos. A classificação é calculada automaticamente.';
-  if(p.includes('local') || p.includes('quadra') || p.includes('campo') || p.includes('mapa')) return 'Na seção "Locais", escolha seu estado, cidade e a modalidade, e clique em "Buscar" para ver os locais no mapa.';
-  if(p.includes('cadastro') || p.includes('login') || p.includes('conta')) return 'Você pode criar uma conta ou entrar clicando nos botões no topo da página.';
-  if(p.includes('cartão') || p.includes('placar')) return 'Dentro do grupo, use os campos de placar e cartões para registrar o resultado da partida.';
-  return 'Ainda estou aprendendo. Você pode navegar pelas seções Locais, Grupos e Campeonatos, ou perguntar de outro jeito.';
-}
-
-/* ================= PAINEL ADMINISTRATIVO ================= */
-function inicializarAdmin(){
-  if(!localStorage.getItem(CHAVES.adminEmails)){
-    salvarLista(CHAVES.adminEmails, ['airesvinicius11@gmail.com']);
-  }
-  if(window.location.hash === '#admin'){
-    const el = document.getElementById('admin-overlay');
-    if(el) el.classList.remove('hidden');
-  }
-}
-function entrarAdmin(){
-  const email = document.getElementById('admin-email').value.trim().toLowerCase();
-  const autorizados = lerLista(CHAVES.adminEmails).map(e => e.toLowerCase());
-  if(!autorizados.includes(email)){
-    document.getElementById('admin-erro').textContent = 'Este e-mail não tem acesso ao painel.';
-    return;
-  }
-  document.getElementById('admin-login').classList.add('hidden');
-  const dash = document.getElementById('admin-dashboard');
-  dash.classList.remove('hidden');
-  renderizarAdminDashboard();
-}
-function renderizarAdminDashboard(){
-  const leads = lerLista(CHAVES.leads);
-  const usuarios = lerLista(CHAVES.usuarios);
-  const grupos = lerLista(CHAVES.grupos);
-  const campeonatos = lerLista(CHAVES.campeonatos);
-  const emails = lerLista(CHAVES.adminEmails);
-
-  const dash = document.getElementById('admin-dashboard');
-  if(!dash) return;
-  dash.innerHTML = `
-    <div class="admin-topline">
-      <h3>Painel administrativo</h3>
-      <button class="btn btn-ghost" onclick="window.location.hash=''; window.location.reload();">Sair</button>
-    </div>
-
-    <div class="admin-section">
-      <h4>Resumo</h4>
-      <p>${usuarios.length} conta(s) criada(s) • ${grupos.length} grupo(s) • ${campeonatos.length} campeonato(s) • ${leads.length} mensagem(ns) recebida(s)</p>
-    </div>
-
-    <div class="admin-section">
-      <h4>Mensagens recebidas</h4>
-      ${leads.length ? leads.map(l => `
-        <div class="admin-list-item"><strong>${sanitizarTexto(l.nome)}</strong> (${sanitizarTexto(l.email)})<br>${sanitizarTexto(l.mensagem)}</div>
-      `).join('') : '<p class="muted">Nenhuma mensagem ainda.</p>'}
-    </div>
-
-    <div class="admin-section">
-      <h4>Contas criadas</h4>
-      ${usuarios.length ? usuarios.map(u => `<div class="admin-list-item">${sanitizarTexto(u.nome)} ${u.idade ? '('+u.idade+' anos)' : ''} — ${sanitizarTexto(u.email)}</div>`).join('') : '<p class="muted">Nenhuma conta ainda.</p>'}
-    </div>
-
-    <div class="admin-section">
-      <h4>E-mails autorizados a acessar este painel</h4>
-      <div class="tag-list" id="admin-lista-emails">
-        ${emails.map(e => `<span class="tag-chip">${sanitizarTexto(e)}<button onclick="removerAdminEmail('${e}')">✕</button></span>`).join('')}
-      </div>
-      <div class="row-2" style="margin-top:12px;">
-        <input id="novo-admin-email" type="email" placeholder="novoemail@exemplo.com">
-        <button class="btn btn-outline" onclick="adicionarAdminEmail()">Autorizar e-mail</button>
-      </div>
-    </div>
-  `;
-}
-function adicionarAdminEmail(){
-  const email = document.getElementById('novo-admin-email').value.trim().toLowerCase();
-  if(!email) return;
-  const emails = lerLista(CHAVES.adminEmails);
-  if(!emails.includes(email)) emails.push(email);
-  salvarLista(CHAVES.adminEmails, emails);
-  renderizarAdminDashboard();
-}
-function removerAdminEmail(email){
-  let emails = lerLista(CHAVES.adminEmails).filter(e => e !== email);
-  if(emails.length === 0) emails = ['airesvinicius11@gmail.com'];
-  salvarLista(CHAVES.adminEmails, emails);
-  renderizarAdminDashboard();
-}
-
-/* ================= CONTADORES DO HERO ================= */
-function atualizarContadoresHero(){
-  const grupos = lerLista(CHAVES.grupos);
-  const totalJogadores = grupos.reduce((soma, g) => soma + g.jogadores.length, 0);
-  const elJ = document.getElementById('stat-jogadores');
-  const elG = document.getElementById('stat-grupos');
-  if(elJ) elJ.textContent = totalJogadores;
-  if(elG) elG.textContent = grupos.length;
-}
-
-/* ================= MENU MOBILE ================= */
-const btnHamburguer = document.getElementById('hamburguer');
-if(btnHamburguer) {
-  btnHamburguer.addEventListener('click', () => {
-    const nav = document.getElementById('nav-menu');
-    if(nav) nav.classList.toggle('open');
-  });
-}
-
-/* ================= INICIALIZAÇÃO ================= */
-document.addEventListener('DOMContentLoaded', () => {
-  preencherEstados();
-  carregarLocaisExemplo();
-  renderizarGrupos();
-  renderizarCampeonatos();
-  atualizarChipUsuario();
-  inicializarAdmin();
-});
