@@ -123,7 +123,161 @@
 
     <!-- ESQUECI A SENHA - ETAPA 1 -->
     <form id="form-esqueci-1" class="hidden" onsubmit="solicitarCodigoReset(event)">
-      <p class="muted" style="font-size: 13px; margin-bottom: 14px;">Digite seu e-mail cadastrado para receber o código de 6 dígitos no Discord.</p>
+      <p class="muted" style="font-size: 13px; margin-bottom: 14px;">Digite seu e-mail cadastrado para receber o código de 6 dígitos por e-mail.</p>
+      <div class="field">
+        <label for="reset-email">E-mail</label>
+        <input id="reset-email" type="email" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-submit-reset1">Enviar código</button>
+      <button type="button" class="btn btn-ghost btn-block" onclick="mudarAbaAuth('login')" style="margin-top: 8px;">Voltar ao Login</button>
+    </form>
+
+    <!-- ESQUECI A SENHA - ETAPA 2 -->
+    <form id="form-esqueci-2" class="hidden" onsubmit="confirmarResetSenha(event)">
+      <div class="field">
+        <label for="reset-codigo">Código de 6 dígitos</label>
+        <input id="reset-codigo" type="text" maxlength="6" pattern="[0-9]{6}" placeholder="Ex: 123456" required>
+      </div>
+      <div class="field">
+        <label for="reset-nova-senha">Nova Senha</label>
+        <div class="password-wrapper">
+          <input id="reset-nova-senha" type="password" required minlength="4">
+          <button type="button" class="btn-toggle-pw" onclick="alternarVisibilidadeSenha('reset-nova-senha', this)">👁️</button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-submit-reset2">Redefinir senha</button>
+    </form>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html><!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contato - Seu Esporte Aqui</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a href="index.html#inicio" class="brand">
+      <span class="brand-ball">⚽</span>
+      <span class="brand-name">Seu Esporte Aqui</span>
+    </a>
+    <nav class="nav" id="nav-menu">
+      <a href="index.html#inicio">Início</a>
+      <a href="index.html#locais">Locais</a>
+      <a href="index.html#grupos">Grupos</a>
+      <a href="index.html#campeonatos">Campeonatos</a>
+      <a href="contato.html">Contato</a>
+    </nav>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost" id="btn-abrir-login" onclick="abrirAuth('login')">Entrar</button>
+      <button class="btn btn-primary" id="btn-abrir-cadastro" onclick="abrirAuth('cadastro')">Criar conta</button>
+      <div class="user-chip hidden" id="user-chip-container">
+        <span id="user-chip"></span>
+        <button class="btn btn-ghost btn-sm" onclick="fazerLogout()" style="padding: 2px 6px; color:#fff;" title="Sair">🚪</button>
+      </div>
+    </div>
+    <button class="hamburguer" id="hamburguer" aria-label="Abrir menu">☰</button>
+  </div>
+</header>
+
+<main>
+  <section class="section">
+    <div class="wrap contato-wrap">
+      <div>
+        <h2>Fale com a gente</h2>
+        <p>Preencha os campos abaixo com seu nome e e-mail para enviar uma mensagem para nossa equipe. Responderemos em breve!</p>
+      </div>
+      <form class="card contato-form" onsubmit="enviarContato(event)">
+        <div class="field">
+          <label for="c-nome">Nome</label>
+          <input id="c-nome" type="text" placeholder="Seu nome completo" required>
+        </div>
+        <div class="field">
+          <label for="c-email">E-mail</label>
+          <input id="c-email" type="email" placeholder="seuemail@exemplo.com" required>
+        </div>
+        <div class="field">
+          <label for="c-msg">Mensagem (opcional)</label>
+          <textarea id="c-msg" rows="4" placeholder="Escreva sua mensagem aqui..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-enviar-contato">Enviar mensagem</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <span class="brand-name small">Seu Esporte Aqui</span>
+    <span class="muted">Plataforma gratuita criada por Aires Vinicius.</span>
+  </div>
+</footer>
+
+<div class="toast hidden" id="toast"></div>
+
+<!-- Modal Auth -->
+<div class="modal hidden" id="modal-auth">
+  <div class="modal-card">
+    <button class="modal-close" onclick="fecharModal('modal-auth')">✕</button>
+    <div class="auth-tabs" id="auth-tabs-header">
+      <button id="auth-tab-login" class="auth-tab active" onclick="mudarAbaAuth('login')">Entrar</button>
+      <button id="auth-tab-cadastro" class="auth-tab" onclick="mudarAbaAuth('cadastro')">Criar conta</button>
+    </div>
+
+    <!-- LOGIN -->
+    <form id="form-login" onsubmit="fazerLogin(event)">
+      <div class="field">
+        <label for="login-email">E-mail</label>
+        <input id="login-email" type="email" required>
+      </div>
+      <div class="field">
+        <label for="login-senha">Senha</label>
+        <div class="password-wrapper">
+          <input id="login-senha" type="password" required minlength="4">
+          <button type="button" class="btn-toggle-pw" onclick="alternarVisibilidadeSenha('login-senha', this)">👁️</button>
+        </div>
+      </div>
+      <a class="link-esqueci" onclick="mudarAbaAuth('esqueci')">Esqueci minha senha</a>
+      <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-submit-login">Entrar</button>
+    </form>
+
+    <!-- CADASTRO -->
+    <form id="form-cadastro" class="hidden" onsubmit="fazerCadastro(event)">
+      <div class="field">
+        <label for="cad-nome">Nome</label>
+        <input id="cad-nome" type="text" required>
+      </div>
+      <div class="field">
+        <label for="cad-idade">Idade</label>
+        <input id="cad-idade" type="number" min="1" max="120" required>
+      </div>
+      <div class="field">
+        <label for="cad-email">E-mail</label>
+        <input id="cad-email" type="email" required>
+      </div>
+      <div class="field">
+        <label for="cad-senha">Senha</label>
+        <div class="password-wrapper">
+          <input id="cad-senha" type="password" required minlength="4">
+          <button type="button" class="btn-toggle-pw" onclick="alternarVisibilidadeSenha('cad-senha', this)">👁️</button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-submit-cad">Criar conta</button>
+    </form>
+
+    <!-- ESQUECI A SENHA - ETAPA 1 -->
+    <form id="form-esqueci-1" class="hidden" onsubmit="solicitarCodigoReset(event)">
+      <p class="muted" style="font-size: 13px; margin-bottom: 14px;">Digite seu e-mail cadastrado para receber o código de 6 dígitos por e-mail.</p>
       <div class="field">
         <label for="reset-email">E-mail</label>
         <input id="reset-email" type="email" required>
