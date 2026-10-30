@@ -1,25 +1,98 @@
-// Configuração do Supabase (Substitua pelas suas chaves do Supabase se possuir)
-// --- INICIALIZAÇÃO DA PÁGINA E ROTEAMENTO POR HASH ---
-document.addEventListener('DOMContentLoaded', () => {
-  atualizarInterfaceUsuario();
-  renderizarGrupos();
-  renderizarCampeonatos();
-  carregarEstados();
-  configurarMenuMobile();
-  
-  // Verifica se o usuário acessou diretamente com #admin na URL
-  verificarHashAdmin();
-});
-
-// Monitora se a URL mudou (caso digite #admin com a página já aberta)
-window.addEventListener('hashchange', () => {
-  verificarHashAdmin();
-});
-
-function verificarHashAdmin() {
-  if (window.location.hash === '#admin') {
-    abrirAdminOverlay();
+// Configuração do Supabase
+// --- PAINEL ADMINISTRATIVO  ---
+const EMAIL_ADMIN_VALIDO = "airesvinicius11@gmail.com";
+function abrirAdminOverlay() {
+  const overlay = document.getElementById('admin-overlay');
+  if (overlay) {
+    overlay.classList.remove('hidden');
+    document.getElementById('admin-login').classList.remove('hidden');
+    document.getElementById('admin-dashboard').classList.add('hidden');
+    document.getElementById('admin-email').value = '';
+    
+    const senhaInput = document.getElementById('admin-senha');
+    if (senhaInput) senhaInput.value = '';
+    
+    document.getElementById('admin-erro').textContent = '';
   }
+}
+
+async function entrarAdmin() {
+  const emailInput = document.getElementById('admin-email').value.trim();
+  const erroEl = document.getElementById('admin-erro');
+
+  if (!emailInput) {
+    erroEl.textContent = 'Por favor, informe o e-mail de administrador.';
+    return;
+  }
+
+  // Validação restrita apenas ao e-mail válido
+  if (emailInput.toLowerCase() !== EMAIL_ADMIN_VALIDO) {
+    erroEl.textContent = 'Acesso negado: E-mail não autorizado como administrador.';
+    return;
+  }
+
+  erroEl.textContent = '';
+  mostrarToast('Acesso concedido! Bem-vindo, Aires.');
+  
+  // Oculta a tela de login e abre o dashboard
+  document.getElementById('admin-login').classList.add('hidden');
+  carregarDashboardAdmin();
+}
+
+async function carregarDashboardAdmin() {
+  const dashboard = document.getElementById('admin-dashboard');
+  dashboard.classList.remove('hidden');
+  dashboard.innerHTML = `<p class="muted">Carregando painel...</p>`;
+
+  let totalUsuarios = 0;
+  let totalGrupos = estadoApp.grupos.length;
+  let totalCampeonatos = estadoApp.campeonatos.length;
+  let totalMensagens = 0;
+
+  // Busca dados do Supabase se estiver conectado
+  if (supabaseClient) {
+    try {
+      const [resUsers, resGrupos, resCamps, resMsgs] = await Promise.all([
+        supabaseClient.from('usuarios').select('id', { count: 'exact' }),
+        supabaseClient.from('grupos').select('id', { count: 'exact' }),
+        supabaseClient.from('campeonatos').select('id', { count: 'exact' }),
+        supabaseClient.from('mensagens_contato').select('id', { count: 'exact' })
+      ]);
+
+      if (resUsers.count !== null) totalUsuarios = resUsers.count;
+      if (resGrupos.count !== null) totalGrupos = resGrupos.count;
+      if (resCamps.count !== null) totalCampeonatos = resCamps.count;
+      if (resMsgs.count !== null) totalMensagens = resMsgs.count;
+    } catch (e) {
+      console.log("Erro ao carregar métricas do Supabase:", e);
+    }
+  }
+
+  dashboard.innerHTML = `
+    <h3>Painel Administrativo</h3>
+    <p class="muted">Logado como: <strong>${EMAIL_ADMIN_VALIDO}</strong></p>
+    
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 15px 0;">
+      <div class="card" style="padding: 10px; text-align: center;">
+        <h4 style="margin: 0;">${totalUsuarios}</h4>
+        <span class="muted" style="font-size: 12px;">Usuários</span>
+      </div>
+      <div class="card" style="padding: 10px; text-align: center;">
+        <h4 style="margin: 0;">${totalGrupos}</h4>
+        <span class="muted" style="font-size: 12px;">Grupos</span>
+      </div>
+      <div class="card" style="padding: 10px; text-align: center;">
+        <h4 style="margin: 0;">${totalCampeonatos}</h4>
+        <span class="muted" style="font-size: 12px;">Campeonatos</span>
+      </div>
+      <div class="card" style="padding: 10px; text-align: center;">
+        <h4 style="margin: 0;">${totalMensagens}</h4>
+        <span class="muted" style="font-size: 12px;">Mensagens</span>
+      </div>
+    </div>
+
+    <button class="btn btn-outline btn-block" style="margin-top: 15px;" onclick="fecharAdmin()">Sair / Fechar Painel</button>
+  `;
 }
 const SUPABASE_URL = "https://seu-projeto.supabase.co";
 const SUPABASE_ANON_KEY = "sua-chave-anonima";
