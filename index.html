@@ -284,7 +284,7 @@
       <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-submit-reset2">Redefinir senha</button>
     </form>
 
-    <p class="fineprint">Aviso: as mensagens do site são enviadas por e-mail à equipe. Sua senha nunca é enviada.</p>
+    <p class="fineprint">Aviso: cadastros, grupos, campeonatos e mensagens são enviados à equipe e guardados em um banco de dados protegido. Sua senha nunca é enviada.</p>
   </div>
 </div>
 
@@ -364,10 +364,17 @@
   <div class="admin-box">
     <div id="admin-login">
       <h3>Painel administrativo</h3>
-      <p class="muted">Acesso restrito. Informe o e-mail autorizado.</p>
+      <p class="muted">Acesso restrito. Entre com a conta de administrador.</p>
       <div class="field">
-        <label>E-mail autorizado</label>
-        <input id="admin-email" type="email" placeholder="seuemail@exemplo.com">
+        <label for="admin-email">E-mail do administrador</label>
+        <input id="admin-email" type="email" placeholder="seuemail@exemplo.com" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="admin-senha">Senha</label>
+        <div class="password-wrapper">
+          <input id="admin-senha" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrarAdmin()">
+          <button type="button" class="btn-toggle-pw" onclick="alternarVisibilidadeSenha('admin-senha', this)">👁️</button>
+        </div>
       </div>
       <button class="btn btn-primary btn-block" onclick="entrarAdmin()">Entrar</button>
       <p class="fineprint" id="admin-erro"></p>
@@ -376,6 +383,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
