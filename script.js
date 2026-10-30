@@ -1,6 +1,6 @@
 // Configuração do Supabase (Substitua pelas suas chaves do Supabase se possuir)
-const SUPABASE_URL = "https://seu-projeto.supabase.co";
-const SUPABASE_ANON_KEY = "sua-chave-anonima";
+const SUPABASE_URL = "https://seu.esporte.aqui.supabase.co";
+const SUPABASE_ANON_KEY = "airesvinicius11@gmail.com";
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 // Estado da Aplicação (Local Fallback + Controle de Interface)
@@ -321,6 +321,134 @@ function verDetalhesCampeonato(id) {
     </ul>
   `;
   abrirModal('modal-campeonato-detalhe');
+}
+
+// --- PAINEL ADMINISTRATIVO COM SUPABASE ---
+const EMAIL_ADMIN_VALIDO = "airesvinicius11@gmail.com";
+
+function abrirAdminOverlay() {
+  const overlay = document.getElementById('admin-overlay');
+  if (overlay) {
+    overlay.classList.remove('hidden');
+    document.getElementById('admin-login').classList.remove('hidden');
+    document.getElementById('admin-dashboard').classList.add('hidden');
+    document.getElementById('admin-email').value = '';
+    document.getElementById('admin-senha').value = '';
+    document.getElementById('admin-erro').textContent = '';
+  }
+}
+
+async function entrarAdmin() {
+  const emailInput = document.getElementById('admin-email').value.trim();
+  const senhaInput = document.getElementById('admin-senha').value;
+  const erroEl = document.getElementById('admin-erro');
+
+  if (!emailInput || !senhaInput) {
+    erroEl.textContent = 'Preencha todos os campos do administrador.';
+    return;
+  }
+
+  // Validação restrita de e-mail autorizador
+  if (emailInput.toLowerCase() !== EMAIL_ADMIN_VALIDO) {
+    erroEl.textContent = 'Acesso negado: E-mail não autorizado como administrador.';
+    return;
+  }
+
+  erroEl.textContent = 'Autenticando...';
+
+  try {
+    // Caso haja Supabase configurado, realiza autenticação real
+    if (supabaseClient) {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email: emailInput,
+        password: senhaInput
+      });
+
+      if (error) {
+        erroEl.textContent = `Erro de autenticação: ${error.message}`;
+        return;
+      }
+
+      // Confirmação de privilégio de admin no banco
+      const { data: adminCheck, error: adminErr } = await supabaseClient
+        .from('administradores')
+        .select('*')
+        .eq('email', emailInput)
+        .single();
+
+      if (adminErr || !adminCheck) {
+        erroEl.textContent = 'Sua conta não tem permissões de administrador na tabela administradores.';
+        return;
+      }
+    }
+
+    erroEl.textContent = '';
+    mostrarToast('Bem-vindo ao Painel Administrativo!');
+    document.getElementById('admin-login').classList.add('hidden');
+    
+    carregarDashboardAdmin();
+  } catch (err) {
+    erroEl.textContent = 'Falha ao conectar com o banco de dados Supabase.';
+  }
+}
+
+async function carregarDashboardAdmin() {
+  const dashboard = document.getElementById('admin-dashboard');
+  dashboard.classList.remove('hidden');
+  dashboard.innerHTML = `<p class="muted">Carregando dados das tabelas...</p>`;
+
+  let totalUsuarios = 0;
+  let totalGrupos = estadoApp.grupos.length;
+  let totalCampeonatos = estadoApp.campeonatos.length;
+  let totalMensagens = 0;
+
+  // Busca de métricas reais no Supabase
+  if (supabaseClient) {
+    const [resUsers, resGrupos, resCamps, resMsgs] = await Promise.all([
+      supabaseClient.from('usuarios').select('id', { count: 'exact' }),
+      supabaseClient.from('grupos').select('id', { count: 'exact' }),
+      supabaseClient.from('campeonatos').select('id', { count: 'exact' }),
+      supabaseClient.from('mensagens_contato').select('id', { count: 'exact' })
+    ]);
+
+    if (resUsers.count !== null) totalUsuarios = resUsers.count;
+    if (resGrupos.count !== null) totalGrupos = resGrupos.count;
+    if (resCamps.count !== null) totalCampeonatos = resCamps.count;
+    if (resMsgs.count !== null) totalMensagens = resMsgs.count;
+  }
+
+  dashboard.innerHTML = `
+    <h3>Painel Administrativo - Visão Geral</h3>
+    <p class="muted">Administrador autenticado: <strong>${EMAIL_ADMIN_VALIDO}</strong></p>
+    
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 15px 0;">
+      <div class="card" style="padding: 10px; text-align: center;">
+        <h4 style="margin: 0;">${totalUsuarios}</h4>
+        <span class="muted" style="font-size: 12px;">Usuários</span>
+      </div>
+      <div class="card" style="padding: 10px; text-align: center;">
+        <h4 style="margin: 0;">${totalGrupos}</h4>
+        <span class="muted" style="font-size: 12px;">Grupos</span>
+      </div>
+      <div class="card" style="padding: 10px; text-align: center;">
+        <h4 style="margin: 0;">${totalCampeonatos}</h4>
+        <span class="muted" style="font-size: 12px;">Campeonatos</span>
+      </div>
+      <div class="card" style="padding: 10px; text-align: center;">
+        <h4 style="margin: 0;">${totalMensagens}</h4>
+        <span class="muted" style="font-size: 12px;">Mensagens</span>
+      </div>
+    </div>
+
+    <button class="btn btn-outline btn-block" style="margin-top: 15px;" onclick="fecharAdmin()">Sair do Painel</button>
+  `;
+}
+
+function fecharAdmin() {
+  const overlay = document.getElementById('admin-overlay');
+  if (overlay) {
+    overlay.classList.add('hidden');
+  }
 }
 
 // --- BUSCA NO MAPA E ESTADOS ---
