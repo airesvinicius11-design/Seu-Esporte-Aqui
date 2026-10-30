@@ -1,4 +1,26 @@
 // Configuração do Supabase (Substitua pelas suas chaves do Supabase se possuir)
+// --- INICIALIZAÇÃO DA PÁGINA E ROTEAMENTO POR HASH ---
+document.addEventListener('DOMContentLoaded', () => {
+  atualizarInterfaceUsuario();
+  renderizarGrupos();
+  renderizarCampeonatos();
+  carregarEstados();
+  configurarMenuMobile();
+  
+  // Verifica se o usuário acessou diretamente com #admin na URL
+  verificarHashAdmin();
+});
+
+// Monitora se a URL mudou (caso digite #admin com a página já aberta)
+window.addEventListener('hashchange', () => {
+  verificarHashAdmin();
+});
+
+function verificarHashAdmin() {
+  if (window.location.hash === '#admin') {
+    abrirAdminOverlay();
+  }
+}
 const SUPABASE_URL = "https://seu-projeto.supabase.co";
 const SUPABASE_ANON_KEY = "sua-chave-anonima";
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
