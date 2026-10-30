@@ -369,12 +369,6 @@
         <label for="admin-email">E-mail do administrador</label>
         <input id="admin-email" type="email" placeholder="seuemail@exemplo.com" autocomplete="username">
       </div>
-      <div class="field">
-        <label for="admin-senha">Senha</label>
-        <div class="password-wrapper">
-          <input id="admin-senha" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrarAdmin()">
-          <button type="button" class="btn-toggle-pw" onclick="alternarVisibilidadeSenha('admin-senha', this)">👁️</button>
-        </div>
       </div>
       <button class="btn btn-primary btn-block" onclick="entrarAdmin()">Entrar</button>
       <p class="fineprint" id="admin-erro"></p>
