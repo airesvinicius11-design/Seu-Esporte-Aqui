@@ -4,6 +4,9 @@
 // • Todas as mensagens do site (contato, cadastro, grupos,
 //   campeonatos, login, redefinição de senha) são enviadas
 //   por E-MAIL para EMAIL_DESTINO (via FormSubmit.co).
+// • Cadastros, contatos, grupos e campeonatos também são guardados
+//   no banco de dados (Supabase). Só o administrador consegue ler
+//   ou alterar esses dados (veja seu_esporte_aqui.sql).
 // • O chat assistente NÃO envia nada por e-mail.
 // • Dados de contas/grupos/campeonatos ficam no localStorage.
 // ============================================================
@@ -16,7 +19,50 @@ const EMAIL_ENDPOINT = "https://formsubmit.co/ajax/" + EMAIL_DESTINO;
 // Espera: POST { pergunta } -> { resposta }. NUNCA coloque chave de API aqui.
 const CHATBOT_API_URL = "";
 
-const ADMIN_EMAIL = EMAIL_DESTINO;
+// ------------------------------------------------------------
+// BANCO DE DADOS (Supabase)
+// ------------------------------------------------------------
+// 1) No painel do Supabase: Project Settings > API.
+// 2) Cole abaixo a "Project URL" e a chave "anon public".
+//    A chave anon é feita para ficar no site. Quem protege os dados
+//    são as regras do arquivo .sql (só o admin lê e altera).
+//    NUNCA cole aqui a chave "service_role".
+const SUPABASE_URL = "COLE_AQUI_A_URL_DO_PROJETO";
+const SUPABASE_ANON_KEY = "COLE_AQUI_A_CHAVE_ANON_PUBLICA";
+
+const sb = (window.supabase && SUPABASE_URL.startsWith("https://"))
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+function uuid() {
+  if (window.crypto?.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+// Visitantes só conseguem ENVIAR dados ao banco. Não conseguem ler nem editar.
+// Se o banco falhar, o site continua funcionando normalmente.
+async function espelharNoBanco(tabela, dados) {
+  if (!sb) return false;
+  try {
+    const { error } = await sb.from(tabela).insert(dados);
+    if (error) { console.warn("Banco (" + tabela + "):", error.message); return false; }
+    return true;
+  } catch (e) {
+    console.warn("Banco indisponível:", e);
+    return false;
+  }
+}
+
+async function espelharCampeonato(nome, times, jogos) {
+  const id = uuid();
+  const ok = await espelharNoBanco("campeonatos", { id, nome, times });
+  if (!ok || !jogos.length) return;
+  await espelharNoBanco("campeonato_jogos", jogos.map((j) => ({ campeonato_id: id, time_a: j.a, time_b: j.b })));
+}
+
 
 // ------------------------------------------------------------
 // Utilidades
@@ -111,7 +157,11 @@ async function enviarContato(event) {
   if (btn) btn.disabled = true;
   const ok = await enviarEmail("Nova mensagem de contato", { Nome: nome, "E-mail": email, Mensagem: mensagem, _replyto: email });
   if (btn) btn.disabled = false;
-  if (ok) { form?.reset(); exibirToast("Mensagem enviada! Responderemos em breve."); }
+  if (ok) {
+    espelharNoBanco("mensagens_contato", { nome, email, mensagem });
+    form?.reset();
+    exibirToast("Mensagem enviada! Responderemos em breve.");
+  }
 }
 
 // ------------------------------------------------------------
@@ -141,6 +191,7 @@ async function fazerCadastro(event) {
   // A senha NUNCA é enviada por e-mail; só o hash fica salvo neste navegador.
   const ok = await enviarEmail("Novo usuário cadastrado", { Nome: nome, Idade: (idade || "N/I") + " anos", "E-mail": email });
   if (!ok) return;
+  espelharNoBanco("usuarios", { nome, idade: Number(idade) || null, email }); // sem senha
   usuarios.push({ nome, idade, email, hash: await hashSenha(senha) });
   gravar("sea_usuarios", usuarios);
   gravar("sea_sessao", email);
@@ -215,6 +266,7 @@ async function criarGrupo(event) {
   });
   if (!ok) return;
   const grupos = ler("sea_grupos", []);
+  espelharNoBanco("grupos", { nome, esporte, local, data_hora: new Date(datahora).toISOString(), jogadores });
   grupos.push({ id: novoId(), nome, esporte, local, datahora, jogadores, times: null, placar: null });
   gravar("sea_grupos", grupos);
   event?.target?.reset();
@@ -305,6 +357,7 @@ async function criarCampeonato(event) {
   if (!ok) return;
   const jogos = [];
   for (let i = 0; i < times.length; i++) for (let j = i + 1; j < times.length; j++) jogos.push({ a: times[i], b: times[j], ga: null, gb: null });
+  espelharCampeonato(nome, times, jogos);
   const cs = ler("sea_campeonatos", []);
   cs.push({ id: novoId(), nome, times, jogos });
   gravar("sea_campeonatos", cs);
@@ -390,20 +443,128 @@ function atualizarStats() {
 // ------------------------------------------------------------
 // ADMIN (abra o site com #admin no final do endereço)
 // ------------------------------------------------------------
-function entrarAdmin() {
-  const e = $("admin-email")?.value.trim().toLowerCase();
-  if (e !== ADMIN_EMAIL.toLowerCase()) { if ($("admin-erro")) $("admin-erro").innerText = "E-mail não autorizado."; return; }
+// O login é feito no Supabase. A trava de verdade fica no banco:
+// mesmo que alguém mexa neste arquivo, sem ser admin não lê nada.
+const TABELAS_ADMIN = ["usuarios", "grupos", "campeonatos", "mensagens_contato"];
+
+async function verificarAdmin() {
+  if (!sb) return false;
+  const { data, error } = await sb.rpc("is_admin");
+  return !error && data === true;
+}
+
+async function entrarAdmin() {
+  const erro = $("admin-erro");
+  if (!sb) { erro.innerText = "Banco de dados ainda não configurado. Preencha SUPABASE_URL e SUPABASE_ANON_KEY no script.js."; return; }
+  const email = $("admin-email")?.value.trim().toLowerCase();
+  const senha = $("admin-senha")?.value;
+  if (!email || !senha) { erro.innerText = "Informe e-mail e senha."; return; }
+  erro.innerText = "Entrando…";
+  const { error } = await sb.auth.signInWithPassword({ email, password: senha });
+  if (error) { erro.innerText = "E-mail ou senha incorretos."; return; }
+  if (!(await verificarAdmin())) {
+    await sb.auth.signOut();
+    erro.innerText = "Esta conta não tem permissão de administrador.";
+    return;
+  }
+  $("admin-senha").value = "";
+  erro.innerText = "";
+  mostrarPainelAdmin();
+}
+
+async function adminSair() {
+  await sb?.auth.signOut();
+  $("admin-dashboard").classList.add("hidden");
+  $("admin-login").classList.remove("hidden");
+}
+
+function fecharAdmin() { $("admin-overlay").classList.add("hidden"); location.hash = ""; }
+
+const _dt = (x) => (x ? new Date(x).toLocaleString("pt-BR") : "—");
+
+async function mostrarPainelAdmin() {
   $("admin-login").classList.add("hidden");
   const d = $("admin-dashboard");
   d.classList.remove("hidden");
-  const us = ler("sea_usuarios", []), gs = ler("sea_grupos", []), cs = ler("sea_campeonatos", []);
-  d.innerHTML = `<div class="admin-topline"><h3>Painel administrativo</h3><button class="btn btn-outline btn-sm" onclick="$('admin-overlay').classList.add('hidden');location.hash=''">Fechar</button></div>
-    <div class="admin-section"><h4>Contas neste navegador (${us.length})</h4>${us.map((u) => `<div class="admin-list-item">${esc(u.nome)} — ${esc(u.email)} (${esc(u.idade)} anos)</div>`).join("") || "Vazio."}</div>
-    <div class="admin-section"><h4>Grupos (${gs.length})</h4>${gs.map((g) => `<div class="admin-list-item">${esc(g.nome)} — ${esc(g.esporte)}</div>`).join("") || "Vazio."}</div>
-    <div class="admin-section"><h4>Campeonatos (${cs.length})</h4>${cs.map((c) => `<div class="admin-list-item">${esc(c.nome)} — ${c.times.length} times</div>`).join("") || "Vazio."}</div>
-    <p class="fineprint">As mensagens de contato e cadastros chegam em ${esc(EMAIL_DESTINO)}.</p>`;
+  d.innerHTML = '<p class="muted">Carregando dados…</p>';
+
+  const [us, gs, cs, ms, au] = await Promise.all([
+    sb.from("usuarios").select("id,nome,idade,email,criado_em").order("criado_em", { ascending: false }),
+    sb.from("grupos").select("id,nome,esporte,local,data_hora,jogadores").order("criado_em", { ascending: false }),
+    sb.from("campeonatos").select("id,nome,times").order("criado_em", { ascending: false }),
+    sb.from("mensagens_contato").select("id,nome,email,mensagem,lida,criado_em").order("criado_em", { ascending: false }),
+    sb.from("auditoria").select("tabela,operacao,quando").order("quando", { ascending: false }).limit(15),
+  ]);
+  const falha = [us, gs, cs, ms, au].find((r) => r.error);
+  if (falha) { d.innerHTML = '<p class="muted">Não foi possível carregar: ' + esc(falha.error.message) + "</p>"; return; }
+
+  const U = us.data, G = gs.data, C = cs.data, M = ms.data, A = au.data;
+  const naoLidas = M.filter((m) => !m.lida).length;
+  window._adminGrupos = Object.fromEntries(G.map((g) => [g.id, g]));
+
+  const btnDel = (t, id) => `<button class="btn btn-ghost btn-sm" onclick="adminExcluir('${t}','${esc(id)}')">🗑️</button>`;
+
+  d.innerHTML = `
+    <div class="admin-topline"><h3>Painel administrativo</h3>
+      <div><button class="btn btn-outline btn-sm" onclick="mostrarPainelAdmin()">Atualizar</button>
+      <button class="btn btn-outline btn-sm" onclick="adminSair()">Sair da conta</button>
+      <button class="btn btn-outline btn-sm" onclick="fecharAdmin()">Fechar</button></div></div>
+
+    <div class="admin-section"><h4>Mensagens de contato (${M.length}, ${naoLidas} não lida(s))</h4>
+      ${M.map((m) => `<div class="admin-list-item">
+        <b>${esc(m.nome)}</b> — ${esc(m.email)} <span class="muted">(${esc(_dt(m.criado_em))})</span><br>
+        ${esc(m.mensagem)}<br>
+        <button class="btn btn-outline btn-sm" onclick="adminMarcarLida('${esc(m.id)}', ${!m.lida})">${m.lida ? "Marcar como não lida" : "✔ Marcar como lida"}</button>
+        ${btnDel("mensagens_contato", m.id)}</div>`).join("") || "Vazio."}</div>
+
+    <div class="admin-section"><h4>Contas (${U.length})</h4>
+      ${U.map((u) => `<div class="admin-list-item">${esc(u.nome)} — ${esc(u.email)} (${esc(u.idade)} anos) ${btnDel("usuarios", u.id)}</div>`).join("") || "Vazio."}</div>
+
+    <div class="admin-section"><h4>Grupos (${G.length})</h4>
+      ${G.map((g) => `<div class="admin-list-item">${esc(g.nome)} — ${esc(g.esporte)} • ${esc(g.local)} • ${esc(_dt(g.data_hora))} • ${g.jogadores.length} jogador(es)
+        <button class="btn btn-outline btn-sm" onclick="adminEditarGrupo('${esc(g.id)}')">✏️ Editar</button> ${btnDel("grupos", g.id)}</div>`).join("") || "Vazio."}</div>
+
+    <div class="admin-section"><h4>Campeonatos (${C.length})</h4>
+      ${C.map((c) => `<div class="admin-list-item">${esc(c.nome)} — ${c.times.length} times ${btnDel("campeonatos", c.id)}</div>`).join("") || "Vazio."}</div>
+
+    <div class="admin-section"><h4>Últimas alterações (auditoria)</h4>
+      ${A.map((a) => `<div class="admin-list-item">${esc(_dt(a.quando))} — ${esc(a.operacao)} em ${esc(a.tabela)}</div>`).join("") || "Nada registrado ainda."}</div>`;
 }
-function checarAdmin() { if (location.hash === "#admin") $("admin-overlay")?.classList.remove("hidden"); }
+
+async function adminExcluir(tabela, id) {
+  if (!TABELAS_ADMIN.includes(tabela)) return;
+  if (!confirm("Excluir este registro? Essa ação não pode ser desfeita.")) return;
+  const { error } = await sb.from(tabela).delete().eq("id", id);
+  if (error) { exibirToast("Erro ao excluir: " + error.message); return; }
+  exibirToast("Registro excluído.");
+  mostrarPainelAdmin();
+}
+
+async function adminMarcarLida(id, lida) {
+  const { error } = await sb.from("mensagens_contato").update({ lida }).eq("id", id);
+  if (error) { exibirToast("Erro: " + error.message); return; }
+  mostrarPainelAdmin();
+}
+
+async function adminEditarGrupo(id) {
+  const g = window._adminGrupos?.[id];
+  if (!g) return;
+  const nome = prompt("Nome do grupo:", g.nome);
+  if (nome === null) return;
+  const local = prompt("Local:", g.local);
+  if (local === null) return;
+  if (!nome.trim()) { exibirToast("O nome não pode ficar vazio."); return; }
+  const { error } = await sb.from("grupos").update({ nome: nome.trim(), local: local.trim() || "Não informado" }).eq("id", id);
+  if (error) { exibirToast("Erro ao salvar: " + error.message); return; }
+  exibirToast("Grupo atualizado.");
+  mostrarPainelAdmin();
+}
+
+async function checarAdmin() {
+  if (location.hash !== "#admin") return;
+  $("admin-overlay")?.classList.remove("hidden");
+  if (sb && (await sb.auth.getSession()).data.session && (await verificarAdmin())) mostrarPainelAdmin();
+}
 
 // ============================================================
 // CHAT ASSISTENTE (não envia nada por e-mail)
@@ -425,7 +586,7 @@ const BASE = [
   { k: ["contato", "falar com", "suporte", "ajuda", "sugestao", "parceria", "email"], r: "Use a página/seção “Contato”: preencha nome, e-mail e mensagem. Ela é enviada por e-mail para a equipe, que responde em breve." },
   { k: ["modalidade", "modalidades", "esportes do site", "quais esportes"], r: "O site tem futebol, vôlei, queimada e quadra poliesportiva. Mas eu respondo sobre qualquer esporte!" },
   { k: ["celular", "app", "aplicativo", "mobile"], r: "O site funciona no navegador do celular e do computador. Não precisa instalar nada." },
-  { k: ["dados", "privacidade", "seguro", "seguranca", "lgpd"], r: "Contas, grupos e campeonatos ficam salvos no seu próprio navegador. Só cadastros, contatos e avisos são enviados por e-mail à equipe — e sua senha nunca é enviada." },
+  { k: ["dados", "privacidade", "seguro", "seguranca", "lgpd"], r: "Contas, grupos e campeonatos ficam salvos no seu navegador. Uma cópia dos cadastros, contatos, grupos e campeonatos vai para um banco de dados protegido que só o administrador consegue ver. Sua senha nunca é enviada." },
 
   // ---- Regras de esportes ----
   { k: ["regras futebol", "regra futebol", "como funciona futebol", "futebol de campo", "impedimento", "escanteio", "penalti", "falta"], r: "Futebol: 2 times de 11, 2 tempos de 45 min. Gol = bola inteira cruzando a linha. Impedimento: atacante à frente do penúltimo adversário e da bola no momento do passe. Pênalti: falta na área. Escanteio: bola sai pela linha de fundo tocada por defensor. Cartão amarelo = advertência (2 = expulsão), vermelho = expulsão direta." },
