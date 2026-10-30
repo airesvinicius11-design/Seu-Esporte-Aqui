@@ -1,6 +1,6 @@
 // Configuração do Supabase (Substitua pelas suas chaves do Supabase se possuir)
-const SUPABASE_URL = "https://seu.esporte.aqui.supabase.co";
-const SUPABASE_ANON_KEY = "airesvinicius11@gmail.com";
+const SUPABASE_URL = "https://seu-projeto.supabase.co";
+const SUPABASE_ANON_KEY = "sua-chave-anonima";
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 // Estado da Aplicação (Local Fallback + Controle de Interface)
@@ -93,7 +93,6 @@ function fazerCadastro(event) {
     return;
   }
 
-  // Registra usuário no localStorage (simulação/fallback)
   const novoUsuario = { nome, idade, email };
   estadoApp.usuarioLogado = novoUsuario;
   localStorage.setItem('usuarioLogado', JSON.stringify(novoUsuario));
@@ -115,7 +114,6 @@ function fazerLogin(event) {
     return;
   }
 
-  // Simulação de login obtendo o nome do e-mail
   const nomeUsuario = email.split('@')[0];
   const usuario = { email, nome: nomeUsuario.charAt(0).toUpperCase() + nomeUsuario.slice(1) };
 
@@ -323,7 +321,7 @@ function verDetalhesCampeonato(id) {
   abrirModal('modal-campeonato-detalhe');
 }
 
-// --- PAINEL ADMINISTRATIVO COM SUPABASE ---
+// --- PAINEL ADMINISTRATIVO (EXCLUSIVO PARA airesvinicius11@gmail.com) ---
 const EMAIL_ADMIN_VALIDO = "airesvinicius11@gmail.com";
 
 function abrirAdminOverlay() {
@@ -348,7 +346,7 @@ async function entrarAdmin() {
     return;
   }
 
-  // Validação restrita de e-mail autorizador
+  // Validação rígida e restrita ao seu e-mail[cite: 2]
   if (emailInput.toLowerCase() !== EMAIL_ADMIN_VALIDO) {
     erroEl.textContent = 'Acesso negado: E-mail não autorizado como administrador.';
     return;
@@ -357,7 +355,6 @@ async function entrarAdmin() {
   erroEl.textContent = 'Autenticando...';
 
   try {
-    // Caso haja Supabase configurado, realiza autenticação real
     if (supabaseClient) {
       const { data, error } = await supabaseClient.auth.signInWithPassword({
         email: emailInput,
@@ -368,41 +365,27 @@ async function entrarAdmin() {
         erroEl.textContent = `Erro de autenticação: ${error.message}`;
         return;
       }
-
-      // Confirmação de privilégio de admin no banco
-      const { data: adminCheck, error: adminErr } = await supabaseClient
-        .from('administradores')
-        .select('*')
-        .eq('email', emailInput)
-        .single();
-
-      if (adminErr || !adminCheck) {
-        erroEl.textContent = 'Sua conta não tem permissões de administrador na tabela administradores.';
-        return;
-      }
     }
 
     erroEl.textContent = '';
-    mostrarToast('Bem-vindo ao Painel Administrativo!');
+    mostrarToast('Bem-vindo ao Painel Administrativo, Aires!');
     document.getElementById('admin-login').classList.add('hidden');
-    
     carregarDashboardAdmin();
   } catch (err) {
-    erroEl.textContent = 'Falha ao conectar com o banco de dados Supabase.';
+    erroEl.textContent = 'Erro ao processar o login administrativo.';
   }
 }
 
 async function carregarDashboardAdmin() {
   const dashboard = document.getElementById('admin-dashboard');
   dashboard.classList.remove('hidden');
-  dashboard.innerHTML = `<p class="muted">Carregando dados das tabelas...</p>`;
+  dashboard.innerHTML = `<p class="muted">Carregando painel...</p>`;
 
   let totalUsuarios = 0;
   let totalGrupos = estadoApp.grupos.length;
   let totalCampeonatos = estadoApp.campeonatos.length;
   let totalMensagens = 0;
 
-  // Busca de métricas reais no Supabase
   if (supabaseClient) {
     const [resUsers, resGrupos, resCamps, resMsgs] = await Promise.all([
       supabaseClient.from('usuarios').select('id', { count: 'exact' }),
@@ -418,8 +401,8 @@ async function carregarDashboardAdmin() {
   }
 
   dashboard.innerHTML = `
-    <h3>Painel Administrativo - Visão Geral</h3>
-    <p class="muted">Administrador autenticado: <strong>${EMAIL_ADMIN_VALIDO}</strong></p>
+    <h3>Painel Administrativo</h3>
+    <p class="muted">Logado como: <strong>${EMAIL_ADMIN_VALIDO}</strong></p>
     
     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 15px 0;">
       <div class="card" style="padding: 10px; text-align: center;">
@@ -440,7 +423,7 @@ async function carregarDashboardAdmin() {
       </div>
     </div>
 
-    <button class="btn btn-outline btn-block" style="margin-top: 15px;" onclick="fecharAdmin()">Sair do Painel</button>
+    <button class="btn btn-outline btn-block" style="margin-top: 15px;" onclick="fecharAdmin()">Sair / Fechar Painel</button>
   `;
 }
 
