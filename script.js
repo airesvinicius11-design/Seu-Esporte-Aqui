@@ -5,7 +5,9 @@ const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_U
 let estadoApp = {
   usuarioLogado: JSON.parse(localStorage.getItem('usuarioLogado')) || null,
   grupos: JSON.parse(localStorage.getItem('grupos')) || [],
-  campeonatos: JSON.parse(localStorage.getItem('campeonatos')) || []
+  campeonatos: JSON.parse(localStorage.getItem('campeonatos')) || [],
+  usuariosCadastrados: JSON.parse(localStorage.getItem('usuariosCadastrados')) || [],
+  mensagensContato: JSON.parse(localStorage.getItem('mensagensContato')) || []
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -91,7 +93,11 @@ function fazerCadastro(event) {
     return;
   }
 
-  const novoUsuario = { nome, idade, email };
+  const novoUsuario = { nome, idade, email, criadoEm: new Date().toLocaleString('pt-BR') };
+  
+  estadoApp.usuariosCadastrados.push(novoUsuario);
+  localStorage.setItem('usuariosCadastrados', JSON.stringify(estadoApp.usuariosCadastrados));
+
   estadoApp.usuarioLogado = novoUsuario;
   localStorage.setItem('usuarioLogado', JSON.stringify(novoUsuario));
 
@@ -345,23 +351,29 @@ async function carregarDashboardAdmin() {
   dashboard.classList.remove('hidden');
   dashboard.innerHTML = `<p class="muted">Carregando painel...</p>`;
 
-  let totalUsuarios = 0;
+  let totalUsuarios = estadoApp.usuariosCadastrados.length;
   let totalGrupos = estadoApp.grupos.length;
   let totalCampeonatos = estadoApp.campeonatos.length;
-  let totalMensagens = 0;
+  let totalMensagens = estadoApp.mensagensContato.length;
 
   if (supabaseClient) {
     try {
       const [resUsers, resGrupos, resCamps, resMsgs] = await Promise.all([
-        supabaseClient.from('usuarios').select('id', { count: 'exact' }),
+        supabaseClient.from('usuarios').select('id, nome, email, idade, criado_em'),
         supabaseClient.from('grupos').select('id', { count: 'exact' }),
         supabaseClient.from('campeonatos').select('id', { count: 'exact' }),
-        supabaseClient.from('mensagens_contato').select('id', { count: 'exact' })
+        supabaseClient.from('mensagens_contato').select('id, nome, email, mensagem, criado_em')
       ]);
-      if (resUsers.count !== null) totalUsuarios = resUsers.count;
+      if (resUsers.data && resUsers.data.length > 0) {
+        totalUsuarios = resUsers.data.length;
+        estadoApp.usuariosCadastrados = resUsers.data;
+      }
       if (resGrupos.count !== null) totalGrupos = resGrupos.count;
       if (resCamps.count !== null) totalCampeonatos = resCamps.count;
-      if (resMsgs.count !== null) totalMensagens = resMsgs.count;
+      if (resMsgs.data && resMsgs.data.length > 0) {
+        totalMensagens = resMsgs.data.length;
+        estadoApp.mensagensContato = resMsgs.data;
+      }
     } catch (e) {
       console.error(e);
     }
@@ -370,13 +382,27 @@ async function carregarDashboardAdmin() {
   dashboard.innerHTML = `
     <h3>Painel Administrativo</h3>
     <p class="muted">Logado como: <strong>${EMAIL_ADMIN_VALIDO}</strong></p>
+    
     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 15px 0;">
       <div class="card" style="padding: 10px; text-align: center;"><h4>${totalUsuarios}</h4><span class="muted" style="font-size: 12px;">Usuários</span></div>
       <div class="card" style="padding: 10px; text-align: center;"><h4>${totalGrupos}</h4><span class="muted" style="font-size: 12px;">Grupos</span></div>
       <div class="card" style="padding: 10px; text-align: center;"><h4>${totalCampeonatos}</h4><span class="muted" style="font-size: 12px;">Campeonatos</span></div>
       <div class="card" style="padding: 10px; text-align: center;"><h4>${totalMensagens}</h4><span class="muted" style="font-size: 12px;">Mensagens</span></div>
     </div>
-    <button class="btn btn-outline btn-block" style="margin-top: 15px;" onclick="fecharAdmin()">Sair</button>
+
+    <div style="margin-top: 20px;">
+      <h4>Contas Criadas:</h4>
+      <div style="max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.03); padding: 8px; border-radius: 6px; font-size: 13px; margin-bottom: 15px;">
+        ${estadoApp.usuariosCadastrados.length > 0 ? estadoApp.usuariosCadastrados.map(u => `<p>👤 <strong>${u.nome}</strong> (${u.email}) - Idade: ${u.idade || 'N/A'}</p>`).join('') : '<p class="muted">Nenhuma conta cadastrada ainda.</p>'}
+      </div>
+
+      <h4>Mensagens Recebidas:</h4>
+      <div style="max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.03); padding: 8px; border-radius: 6px; font-size: 13px;">
+        ${estadoApp.mensagensContato.length > 0 ? estadoApp.mensagensContato.map(m => `<p>💬 <strong>${m.nome}</strong> (${m.email}): ${m.mensagem}</p>`).join('') : '<p class="muted">Nenhuma mensagem recebida ainda.</p>'}
+      </div>
+    </div>
+
+    <button class="btn btn-outline btn-block" style="margin-top: 20px;" onclick="fecharAdmin()">Sair</button>
   `;
 }
 
@@ -416,7 +442,16 @@ function buscarNoMapa() {
 
 function enviarContato(event) {
   event.preventDefault();
-  mostrarToast('Mensagem enviada com sucesso!');
+  const nome = document.getElementById('c-nome').value.trim();
+  const email = document.getElementById('c-email').value.trim();
+  const mensagem = document.getElementById('c-msg').value.trim() || 'Sem mensagem informada';
+
+  const novaMensagem = { nome, email, mensagem, criadoEm: new Date().toLocaleString('pt-BR') };
+  
+  estadoApp.mensagensContato.push(novaMensagem);
+  localStorage.setItem('mensagensContato', JSON.stringify(estadoApp.mensagensContato));
+
+  mostrarToast('Mensagem enviada com sucesso! Entraremos em contato em breve.');
   event.target.reset();
 }
 
@@ -431,7 +466,7 @@ function enviarMensagemBot(event) {
   const texto = input.value.trim();
   if (!texto) return;
 
-  chatBody.innerHTML += `<div style="text-align: right; margin-bottom: 8px;"><strong>Você:</strong> ${texto}</div>`;
+  chatBody.html += `<div style="text-align: right; margin-bottom: 8px;"><strong>Você:</strong> ${texto}</div>`;
   input.value = '';
 
   setTimeout(() => {
