@@ -1,28 +1,22 @@
-// Configuração do Supabase (Substitua pelas suas chaves do Supabase se possuir)
 const SUPABASE_URL = "https://seu-projeto.supabase.co";
 const SUPABASE_ANON_KEY = "sua-chave-anonima";
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
-const EMAIL_ADMIN_VALIDO = "airesvinicius11@gmail.com";
-// Estado da Aplicação (Local Fallback + Controle de Interface)
+
 let estadoApp = {
   usuarioLogado: JSON.parse(localStorage.getItem('usuarioLogado')) || null,
   grupos: JSON.parse(localStorage.getItem('grupos')) || [],
   campeonatos: JSON.parse(localStorage.getItem('campeonatos')) || []
 };
 
-// --- INICIALIZAÇÃO DA PÁGINA E ROTEAMENTO POR HASH (#admin) ---
 document.addEventListener('DOMContentLoaded', () => {
   atualizarInterfaceUsuario();
   renderizarGrupos();
   renderizarCampeonatos();
   carregarEstados();
   configurarMenuMobile();
-  
-  // Verifica se acessou direto com #admin na URL
   verificarHashAdmin();
 });
 
-// Monitora se a URL mudou para abrir o admin com #admin
 window.addEventListener('hashchange', () => {
   verificarHashAdmin();
 });
@@ -33,19 +27,14 @@ function verificarHashAdmin() {
   }
 }
 
-// --- GERENCIAMENTO DE MODAIS ---
 function abrirModal(modalId) {
   const modal = document.getElementById(modalId);
-  if (modal) {
-    modal.classList.remove('hidden');
-  }
+  if (modal) modal.classList.remove('hidden');
 }
 
 function fecharModal(modalId) {
   const modal = document.getElementById(modalId);
-  if (modal) {
-    modal.classList.add('hidden');
-  }
+  if (modal) modal.classList.add('hidden');
 }
 
 function abrirAuth(aba = 'login') {
@@ -61,13 +50,10 @@ function mudarAbaAuth(aba) {
   const formEsqueci1 = document.getElementById('form-esqueci-1');
   const formEsqueci2 = document.getElementById('form-esqueci-2');
 
-  // Esconde todos os formulários
   formLogin.classList.add('hidden');
   formCadastro.classList.add('hidden');
   formEsqueci1.classList.add('hidden');
   formEsqueci2.classList.add('hidden');
-
-  // Ajusta as abas ativas
   tabLogin.classList.remove('active');
   tabCadastro.classList.remove('active');
 
@@ -93,10 +79,8 @@ function alternarVisibilidadeSenha(inputId, btn) {
   }
 }
 
-// --- AUTENTICAÇÃO (ENTRAR E CRIAR CONTA) ---
 function fazerCadastro(event) {
   event.preventDefault();
-
   const nome = document.getElementById('cad-nome').value.trim();
   const idade = document.getElementById('cad-idade').value.trim();
   const email = document.getElementById('cad-email').value.trim();
@@ -119,7 +103,6 @@ function fazerCadastro(event) {
 
 function fazerLogin(event) {
   event.preventDefault();
-
   const email = document.getElementById('login-email').value.trim();
   const senha = document.getElementById('login-senha').value;
 
@@ -165,7 +148,6 @@ function atualizarInterfaceUsuario() {
   }
 }
 
-// --- RECUPERAÇÃO DE SENHA ---
 function solicitarCodigoReset(event) {
   event.preventDefault();
   const email = document.getElementById('reset-email').value.trim();
@@ -178,15 +160,13 @@ function solicitarCodigoReset(event) {
 
 function confirmarResetSenha(event) {
   event.preventDefault();
-  mostrarToast('Senha alterada com sucesso! Faça login com a nova senha.');
+  mostrarToast('Senha alterada com sucesso!');
   mudarAbaAuth('login');
   document.getElementById('form-esqueci-2').reset();
 }
 
-// --- CRIAR E GERENCIAR GRUPOS ---
 function criarGrupo(event) {
   event.preventDefault();
-
   const nome = document.getElementById('g-nome').value.trim();
   const esporte = document.getElementById('g-esporte').value;
   const local = document.getElementById('g-local').value.trim();
@@ -199,7 +179,6 @@ function criarGrupo(event) {
   }
 
   const jogadores = jogadoresTexto ? jogadoresTexto.split(',').map(j => j.trim()) : [];
-
   const novoGrupo = {
     id: Date.now(),
     nome,
@@ -224,12 +203,11 @@ function renderizarGrupos() {
   const statGrupos = document.getElementById('stat-grupos');
 
   if (!container) return;
-
   container.innerHTML = '';
   let totalJogadores = 0;
 
   if (estadoApp.grupos.length === 0) {
-    container.innerHTML = '<p class="muted">Nenhum grupo criado ainda. Clique em "Criar grupo" para começar!</p>';
+    container.innerHTML = '<p class="muted">Nenhum grupo criado ainda.</p>';
   } else {
     estadoApp.grupos.forEach(grupo => {
       totalJogadores += grupo.jogadores.length;
@@ -263,16 +241,14 @@ function verDetalhesGrupo(id) {
     <p><strong>Data/Hora:</strong> ${grupo.datahora}</p>
     <h4>Jogadores Confirmados (${grupo.jogadores.length}):</h4>
     <ul>
-      ${grupo.jogadores.map(j => `<li>⚽ ${j}</li>`).join('') || '<li>Nenhum jogador adicionado ainda.</li>'}
+      ${grupo.jogadores.map(j => `<li>⚽ ${j}</li>`).join('') || '<li>Nenhum jogador.</li>'}
     </ul>
   `;
   abrirModal('modal-grupo-detalhe');
 }
 
-// --- CRIAR E GERENCIAR CAMPEONATOS ---
 function criarCampeonato(event) {
   event.preventDefault();
-
   const nome = document.getElementById('camp-nome').value.trim();
   const timesTexto = document.getElementById('camp-times').value.trim();
 
@@ -282,12 +258,7 @@ function criarCampeonato(event) {
   }
 
   const times = timesTexto.split(',').map(t => t.trim()).filter(t => t !== '');
-
-  const novoCampeonato = {
-    id: Date.now(),
-    nome,
-    times
-  };
+  const novoCampeonato = { id: Date.now(), nome, times };
 
   estadoApp.campeonatos.push(novoCampeonato);
   localStorage.setItem('campeonatos', JSON.stringify(estadoApp.campeonatos));
@@ -301,11 +272,10 @@ function criarCampeonato(event) {
 function renderizarCampeonatos() {
   const container = document.getElementById('lista-campeonatos');
   if (!container) return;
-
   container.innerHTML = '';
 
   if (estadoApp.campeonatos.length === 0) {
-    container.innerHTML = '<p class="muted">Nenhum campeonato cadastrado. Clique em "Criar campeonato" para começar!</p>';
+    container.innerHTML = '<p class="muted">Nenhum campeonato cadastrado.</p>';
   } else {
     estadoApp.campeonatos.forEach(camp => {
       const card = document.createElement('div');
@@ -313,7 +283,7 @@ function renderizarCampeonatos() {
       card.innerHTML = `
         <h3>${camp.nome}</h3>
         <p class="muted"><strong>Times Inscritos:</strong> ${camp.times.length}</p>
-        <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="verDetalhesCampeonato(${camp.id})">Ver Classificação / Times</button>
+        <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="verDetalhesCampeonato(${camp.id})">Ver Times</button>
       `;
       container.appendChild(card);
     });
@@ -335,7 +305,6 @@ function verDetalhesCampeonato(id) {
   abrirModal('modal-campeonato-detalhe');
 }
 
-// --- PAINEL ADMINISTRATIVO (EXCLUSIVO PARA airesvinicius11@gmail.com - SEM SENHA) ---
 const EMAIL_ADMIN_VALIDO = "airesvinicius11@gmail.com";
 
 function abrirAdminOverlay() {
@@ -345,32 +314,28 @@ function abrirAdminOverlay() {
     document.getElementById('admin-login').classList.remove('hidden');
     document.getElementById('admin-dashboard').classList.add('hidden');
     document.getElementById('admin-email').value = '';
-    
     const senhaInput = document.getElementById('admin-senha');
     if (senhaInput) senhaInput.value = '';
-    
     document.getElementById('admin-erro').textContent = '';
   }
 }
 
-async function entrarAdmin() {
+function entrarAdmin() {
   const emailInput = document.getElementById('admin-email').value.trim();
   const erroEl = document.getElementById('admin-erro');
 
   if (!emailInput) {
-    erroEl.textContent = 'Por favor, informe o e-mail de administrador.';
+    erroEl.textContent = 'Informe o e-mail.';
     return;
   }
 
-  // Validação rígida e restrita ao e-mail autorizado
   if (emailInput.toLowerCase() !== EMAIL_ADMIN_VALIDO) {
-    erroEl.textContent = 'Acesso negado: E-mail não autorizado como administrador.';
+    erroEl.textContent = 'E-mail não autorizado.';
     return;
   }
 
   erroEl.textContent = '';
-  mostrarToast('Acesso concedido! Bem-vindo, Aires.');
-  
+  mostrarToast('Acesso concedido!');
   document.getElementById('admin-login').classList.add('hidden');
   carregarDashboardAdmin();
 }
@@ -393,58 +358,39 @@ async function carregarDashboardAdmin() {
         supabaseClient.from('campeonatos').select('id', { count: 'exact' }),
         supabaseClient.from('mensagens_contato').select('id', { count: 'exact' })
       ]);
-
       if (resUsers.count !== null) totalUsuarios = resUsers.count;
       if (resGrupos.count !== null) totalGrupos = resGrupos.count;
       if (resCamps.count !== null) totalCampeonatos = resCamps.count;
       if (resMsgs.count !== null) totalMensagens = resMsgs.count;
     } catch (e) {
-      console.log("Erro ao carregar métricas do Supabase:", e);
+      console.error(e);
     }
   }
 
   dashboard.innerHTML = `
     <h3>Painel Administrativo</h3>
     <p class="muted">Logado como: <strong>${EMAIL_ADMIN_VALIDO}</strong></p>
-    
     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 15px 0;">
-      <div class="card" style="padding: 10px; text-align: center;">
-        <h4 style="margin: 0;">${totalUsuarios}</h4>
-        <span class="muted" style="font-size: 12px;">Usuários</span>
-      </div>
-      <div class="card" style="padding: 10px; text-align: center;">
-        <h4 style="margin: 0;">${totalGrupos}</h4>
-        <span class="muted" style="font-size: 12px;">Grupos</span>
-      </div>
-      <div class="card" style="padding: 10px; text-align: center;">
-        <h4 style="margin: 0;">${totalCampeonatos}</h4>
-        <span class="muted" style="font-size: 12px;">Campeonatos</span>
-      </div>
-      <div class="card" style="padding: 10px; text-align: center;">
-        <h4 style="margin: 0;">${totalMensagens}</h4>
-        <span class="muted" style="font-size: 12px;">Mensagens</span>
-      </div>
+      <div class="card" style="padding: 10px; text-align: center;"><h4>${totalUsuarios}</h4><span class="muted" style="font-size: 12px;">Usuários</span></div>
+      <div class="card" style="padding: 10px; text-align: center;"><h4>${totalGrupos}</h4><span class="muted" style="font-size: 12px;">Grupos</span></div>
+      <div class="card" style="padding: 10px; text-align: center;"><h4>${totalCampeonatos}</h4><span class="muted" style="font-size: 12px;">Campeonatos</span></div>
+      <div class="card" style="padding: 10px; text-align: center;"><h4>${totalMensagens}</h4><span class="muted" style="font-size: 12px;">Mensagens</span></div>
     </div>
-
-    <button class="btn btn-outline btn-block" style="margin-top: 15px;" onclick="fecharAdmin()">Sair / Fechar Painel</button>
+    <button class="btn btn-outline btn-block" style="margin-top: 15px;" onclick="fecharAdmin()">Sair</button>
   `;
 }
 
 function fecharAdmin() {
   const overlay = document.getElementById('admin-overlay');
-  if (overlay) {
-    overlay.classList.add('hidden');
-  }
+  if (overlay) overlay.classList.add('hidden');
   if (window.location.hash === '#admin') {
     history.pushState("", document.title, window.location.pathname + window.location.search);
   }
 }
 
-// --- BUSCA NO MAPA E ESTADOS ---
 function carregarEstados() {
   const selEstado = document.getElementById('sel-estado');
   if (!selEstado) return;
-
   const estados = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
   selEstado.innerHTML = estados.map(uf => `<option value="${uf}">${uf}</option>`).join('');
 }
@@ -452,39 +398,30 @@ function carregarEstados() {
 function preencherCapital() {
   const uf = document.getElementById('sel-estado').value;
   const inputCidade = document.getElementById('input-cidade');
-  const capitais = {
-    SP: "São Paulo", RJ: "Rio de Janeiro", MG: "Belo Horizonte", BA: "Salvador", PR: "Curitiba", RS: "Porto Alegre", PE: "Recife", CE: "Fortaleza", DF: "Brasília"
-  };
-  if (capitais[uf]) {
-    inputCidade.value = capitais[uf];
-  }
+  const capitais = { SP: "São Paulo", RJ: "Rio de Janeiro", MG: "Belo Horizonte", BA: "Salvador", PR: "Curitiba", RS: "Porto Alegre", PE: "Recife", CE: "Fortaleza", DF: "Brasília" };
+  if (capitais[uf]) inputCidade.value = capitais[uf];
 }
 
 function buscarNoMapa() {
   const cidade = document.getElementById('input-cidade').value.trim();
   const esporte = document.getElementById('sel-esporte').value;
   const iframe = document.getElementById('mapa-embed');
-
   if (!cidade) {
-    mostrarToast('Por favor, digite uma cidade.');
+    mostrarToast('Digite uma cidade.');
     return;
   }
-
-  const query = encodeURIComponent(`${esporte} em ${cidade}`);
-  iframe.src = `https://maps.google.com/maps?q=${query}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
+  iframe.src = `https://maps.google.com/maps?q=${encodeURIComponent(`${esporte} em ${cidade}`)}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
   mostrarToast('Mapa atualizado!');
 }
 
-// --- CONTATO E CHAT ---
 function enviarContato(event) {
   event.preventDefault();
-  mostrarToast('Mensagem enviada com sucesso! Entraremos em contato em breve.');
+  mostrarToast('Mensagem enviada com sucesso!');
   event.target.reset();
 }
 
 function alternarChat() {
-  const chatBox = document.getElementById('chat-box');
-  chatBox.classList.toggle('hidden');
+  document.getElementById('chat-box').classList.toggle('hidden');
 }
 
 function enviarMensagemBot(event) {
@@ -492,38 +429,29 @@ function enviarMensagemBot(event) {
   const input = document.getElementById('chat-texto');
   const chatBody = document.getElementById('chat-body');
   const texto = input.value.trim();
-
   if (!texto) return;
 
   chatBody.innerHTML += `<div style="text-align: right; margin-bottom: 8px;"><strong>Você:</strong> ${texto}</div>`;
   input.value = '';
 
   setTimeout(() => {
-    chatBody.innerHTML += `<div style="text-align: left; margin-bottom: 8px; color: var(--primary);"><strong>Assistente:</strong> Olá! Como posso ajudar você a organizar seu jogo hoje?</div>`;
+    chatBody.innerHTML += `<div style="text-align: left; margin-bottom: 8px; color: var(--primary);"><strong>Assistente:</strong> Olá! Como posso ajudar?</div>`;
     chatBody.scrollTop = chatBody.scrollHeight;
   }, 600);
 }
 
-// --- MENU RESPONSIVO & TOAST ---
 function configurarMenuMobile() {
   const hamburguer = document.getElementById('hamburguer');
   const nav = document.getElementById('nav-menu');
-
   if (hamburguer && nav) {
-    hamburguer.addEventListener('click', () => {
-      nav.classList.toggle('active');
-    });
+    hamburguer.addEventListener('click', () => nav.classList.toggle('active'));
   }
 }
 
 function mostrarToast(mensagem) {
   const toast = document.getElementById('toast');
   if (!toast) return;
-
   toast.textContent = mensagem;
   toast.classList.remove('hidden');
-
-  setTimeout(() => {
-    toast.classList.add('hidden');
-  }, 3500);
+  setTimeout(() => toast.classList.add('hidden'), 3500);
 }
